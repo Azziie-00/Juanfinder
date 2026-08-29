@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Modal, Button, Form, Spinner } from 'react-bootstrap';
-import { useAuth } from '../context/AuthContext';
-import { VALID_USERS, AuthUser } from '../data/datas';
+import { useAuth } from '../context/useAuth';
+import { VALID_USERS } from '../data/datas';
+import type { AuthUser } from '../data/datas';
 import '../styles/login.css';
 
 type Role = 'student' | 'adviser' | 'admin';
