@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Modal, Button, Form, Table, Badge, Spinner } from 'react-bootstrap';
+import { Modal, Button, Form, Table, Badge } from 'react-bootstrap';
 import Layout from '../components/Layout';
-import { STUDENTS, GROUPS, getMemberNames, getInitials, GroupData, StudentData } from '../data/datas';
-import { useAuth } from '../context/AuthContext';
+import { STUDENTS, GROUPS, getMemberNames, getInitials } from '../data/datas';
+import type { GroupData, StudentData } from '../data/datas';
+import { useAuth } from '../context/useAuth';
 import '../styles/finder.css';
 
 const PAGE_SIZE = 8;

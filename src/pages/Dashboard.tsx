@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Row, Col, InputGroup, Form, Spinner } from 'react-bootstrap';
 import Layout from '../components/Layout';
-import { STATS, ADVISER, SEED_GROUPS, AI_CONFIG, GroupData } from '../data/datas';
+import { STATS, ADVISER, SEED_GROUPS, AI_CONFIG } from '../data/datas';
+import type { GroupData } from '../data/datas';
 import '../styles/dashboard.css';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];

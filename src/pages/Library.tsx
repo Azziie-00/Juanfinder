@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal, Button, Badge, Form, InputGroup } from 'react-bootstrap';
 import Layout from '../components/Layout';
-import '../styles/library.css';
+import '../styles/Library.css';
 
 type Category = 'THESIS' | 'CAPSTONE';
 

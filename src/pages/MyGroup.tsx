@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Modal, Button, Form } from 'react-bootstrap';
 import Layout from '../components/Layout';
-import { useAuth } from '../context/AuthContext';
-import { MyGroupData, GroupMember, PendingRequest, getInitials } from '../data/datas';
+import { useAuth } from '../context/useAuth';
+import { getInitials } from '../data/datas';
+import type { MyGroupData, GroupMember, PendingRequest } from '../data/datas';
 import '../styles/mygroup.css';
 
 const DEMO_GROUP: MyGroupData = {
@@ -22,21 +23,18 @@ interface EditForm { name: string; desc: string; skills: string; max: string; }
 
 export default function MyGroup() {
   const { user } = useAuth();
-  const [group, setGroup]             = useState<MyGroupData | null>(null);
-  const [isOwner, setIsOwner]         = useState(false);
+  const [group, setGroup]             = useState<MyGroupData>(() => {
+    const saved = sessionStorage.getItem('jf_mygroup');
+    const g: MyGroupData = saved ? JSON.parse(saved) : JSON.parse(JSON.stringify(DEMO_GROUP));
+    if (!saved && user?.name) g.members[0].name = user.name;
+    if (!saved) sessionStorage.setItem('jf_mygroup', JSON.stringify(g));
+    return g;
+  });
+  const isOwner = group.members[0]?.name === (user?.name || 'Juan Dela Cruz');
   const [editOpen, setEditOpen]       = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [editForm, setEditForm]       = useState<EditForm>({ name:'', desc:'', skills:'', max:'4' });
   const [editError, setEditError]     = useState('');
-
-  useEffect(() => {
-    const saved = sessionStorage.getItem('jf_mygroup');
-    let g: MyGroupData = saved ? JSON.parse(saved) : JSON.parse(JSON.stringify(DEMO_GROUP));
-    if (!saved && user?.name) g.members[0].name = user.name;
-    if (!saved) sessionStorage.setItem('jf_mygroup', JSON.stringify(g));
-    setGroup(g);
-    setIsOwner(g.members[0]?.name === (user?.name || 'Juan Dela Cruz'));
-  }, [user]);
 
   const save = (updated: MyGroupData) => {
     setGroup(updated);
