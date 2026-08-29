@@ -1,0 +1,12 @@
+/* ── Dashboard layout ── */
+.dashboard-content {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  padding: 12px; gap: 12px; background: var(--bg-page);
+  padding-bottom: 20px;
+}
+.dashboard-content::-webkit-scrollbar { width: 4px; }
+.dashboard-content::-webkit-scrollbar-thumb { background: rgba(26,42,74,.2); border-radius: 2px; }
+
+@media (max-width: 768px) {
+  .dashboard-content { padding: 10px 10px 80px; }
+}
