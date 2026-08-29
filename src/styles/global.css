@@ -1,4 +1,4 @@
-/* ─── JuanFinder — global.css (Bootstrap-based) ─── */
+/*JuanFinder — global.css (Bootstrap-based)*/
 :root {
   --navy:        #1a2a4a;
   --navy-mid:    #253f66;
@@ -14,10 +14,10 @@
 html, body, #root { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-page); overflow: hidden; }
 a { text-decoration: none; color: inherit; }
 
-/* ── App shell ── */
+/*App shell*/
 .app { display: flex; width: 100vw; height: 100vh; overflow: hidden; }
 
-/* ── Sidebar ── */
+/*Sidebar*/
 .sidebar { width: 200px; flex-shrink: 0; background: var(--navy); display: flex; flex-direction: column; height: 100vh; }
 .logo { padding: 18px 16px 14px; border-bottom: 1px solid rgba(255,255,255,.1); }
 .logo-system { font-size: 10px; color: rgba(255,255,255,.45); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
@@ -29,10 +29,10 @@ a { text-decoration: none; color: inherit; }
 .sidebar .nav-item.active { background: var(--navy-mid); color: #fff; font-weight: 600; }
 .sidebar-footer { padding: 8px 0; border-top: 1px solid rgba(255,255,255,.1); }
 
-/* ── Main ── */
+/*Main*/
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hidden; }
 
-/* ── Topbar ── */
+/*Topbar*/
 .topbar { background: var(--navy); padding: 12px 22px; }
 .topbar-title { font-size: 22px; font-weight: 700; color: var(--amber); }
 .user-dropdown-wrap { position: relative; }
@@ -42,7 +42,7 @@ a { text-decoration: none; color: inherit; }
 .user-chevron { font-size: 14px; color: rgba(255,255,255,.45); cursor: pointer; transition: transform .2s; }
 .user-chevron.open { transform: rotate(180deg); }
 
-/* User dropdown */
+/*User dropdown*/
 .user-dd { position: absolute; top: calc(100% + 8px); right: 0; background: var(--navy-mid); border-radius: 12px; min-width: 210px; box-shadow: 0 8px 32px rgba(0,0,0,.35); z-index: 1050; overflow: hidden; animation: ddIn .15s ease; }
 @keyframes ddIn { from { opacity:0; transform: translateY(-6px); } to { opacity:1; transform: translateY(0); } }
 .user-dd-header { background: var(--navy); padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
@@ -170,6 +170,8 @@ a { text-decoration: none; color: inherit; }
 
 /* Form fields (Bootstrap dark override) */
 .jf-input { background: var(--navy-mid) !important; border: 1.5px solid rgba(255,255,255,.12) !important; border-radius: 8px !important; padding: 9px 12px !important; font-size: 13px !important; color: #fff !important; }
+.jf-input.ps-5 { padding-left: 2.75rem !important; }
+.jf-input.pe-5 { padding-right: 2.75rem !important; }
 .jf-input::placeholder { color: rgba(255,255,255,.22) !important; }
 .jf-input:focus { border-color: var(--amber) !important; box-shadow: none !important; }
 .jf-label { font-size: 10px; font-weight: 700; color: var(--amber); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
