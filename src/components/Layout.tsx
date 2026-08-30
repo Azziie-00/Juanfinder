@@ -37,7 +37,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="logo-system">STI Education System</div>
           <div className="logo-brand">JuanFinder</div>
         </div>
-        <nav className="nav">
+        <nav className="sidebar-nav">
           {NAV_LINKS.map(({ to, icon, label }) => (
             <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
               <i className={`ti ${icon}`}></i> {label}
@@ -52,7 +52,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       <div className="main">
         <header className="topbar d-flex align-items-center justify-content-between">
           <div className="topbar-title">JuanFinder</div>
-          <div className="d-flex align-items-center gap-2" ref={ddRef}>
+          <div className="d-flex align-items-center gap-2" ref={ddRef} style={{ position: 'relative' }}>
             <i className="ti ti-bell fs-5" style={{ color:'rgba(255,255,255,.65)', cursor:'pointer' }}></i>
             <div className="topbar-avatar">{initials}</div>
             <div>
@@ -71,7 +71,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                   </div>
                 </div>
                 <div className="user-dd-divider"></div>
-                <div className="user-dd-item"><i className="ti ti-user"></i> My Profile</div>
+                <div className="user-dd-item" onClick={() => { setDdOpen(false); navigate('/profile'); }}><i className="ti ti-user"></i> My Profile</div>
                 <div className="user-dd-item"><i className="ti ti-settings"></i> Settings</div>
                 <div className="user-dd-divider"></div>
                 <div className="user-dd-item logout" onClick={() => { logout(); navigate('/login'); }}>
