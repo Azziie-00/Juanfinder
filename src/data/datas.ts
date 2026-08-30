@@ -1,4 +1,4 @@
-//Types
+// ── Types ──────────────────────────────────────────────────────────────
 export interface GroupData {
   id: string;
   name: string;
@@ -61,12 +61,74 @@ export interface AuthUser {
   role: 'student' | 'adviser' | 'admin';
 }
 
-//Stats
+// ── Stats ──────────────────────────────────────────────────────────────
 export const STATS = { finder: 400, adviser: 10 };
 
 export const ADVISER = { name: 'Orbase, Albert', announcement: 'No announcements yet.' };
 
-//Seed Groups (Dashboard) ─e─
+// ── Student profile (Profile page) ──────────────────────────────────────
+export interface StudentProfile {
+  studentId: string;
+  course: string;
+  yearLevel: string;
+  birthdate: string;
+  gender: string;
+  socials: string;
+  bio: string;
+  skills: string[];
+  lastLogin: string;
+}
+
+export const PROFILE: StudentProfile = {
+  studentId: '2000667788',
+  course: 'BSIT',
+  yearLevel: '3Y2',
+  birthdate: '08/10/2005',
+  gender: 'Male',
+  socials: 'https://www.facebook.com/JDCruz',
+  bio: "Hi! I'm Juan Dela Cruz, a BSIT student who is passionate about software development and problem solving. I'm looking for a group to build amazing projects together.",
+  skills: ['UI Designer', 'Database'],
+  lastLogin: '3 days ago',
+};
+
+// ── Advisers (Adviser page) ─────────────────────────────────────────────
+export interface AdviserData {
+  id: string;
+  name: string;
+  slots: number | null;
+  maxSlots: number;
+  bio: string;
+  requirements: string[];
+}
+
+export const ADVISERS: AdviserData[] = [
+  { id:'adv1', name:'Joselito G. Oyao',
+    bio:'Full-Stack instructor specializing in AI-driven capstone projects. Available for consultation and thesis guidance for BSIT/BSCS students.',
+    slots:null, maxSlots:10,
+    requirements:['Monday - Thursday: 1pm-4pm', 'A4 Paper', 'Attendance Form(?)', 'Message before consult'] },
+  { id:'adv2', name:'Dexter B. Oseña',
+    bio:'Focuses on data science and machine learning capstone projects. Prefers groups with a clear problem statement before the first meeting.',
+    slots:null, maxSlots:10,
+    requirements:['Tuesday - Friday: 9am-12nn', 'Project proposal draft', 'Recommendation letter'] },
+  { id:'adv3', name:'Prince Aron E. Chavez',
+    bio:'Specializes in mobile and IoT capstone projects. Requires groups to have at least two members before applying.',
+    slots:null, maxSlots:10,
+    requirements:['Wednesday - Saturday: 1pm-5pm', 'Finalized project title', 'Group of at least 2 members'] },
+  { id:'adv4', name:'Leny Z. Laya',
+    bio:'Guides groups on web development and project management capstones. Open consultation hours are posted weekly.',
+    slots:null, maxSlots:10,
+    requirements:['Monday - Wednesday: 10am-1pm', 'Endorsement form', 'Capstone proposal draft'] },
+  { id:'adv5', name:'Albert C. Orbase',
+    bio:'Open to AI and Full-Stack capstone projects. Enjoys working with groups that already have a system architecture outline ready.',
+    slots:null, maxSlots:10,
+    requirements:['Thursday - Friday: 2pm-5pm', 'System architecture outline', 'Project proposal draft'] },
+  { id:'adv6', name:'Maricel D. Fernandez',
+    bio:'Advises on UI/UX and product design capstone projects. Requires a wireframe or prototype before the first consultation.',
+    slots:null, maxSlots:10,
+    requirements:['Monday - Friday: 3pm-5pm', 'Wireframe or prototype', 'Confirmed project specialty'] },
+];
+
+// ── Seed Groups (Dashboard) ─────────────────────────────────────────────
 export const SEED_GROUPS: GroupData[] = [
   { id:'g1', name:'EcoSort: Smart Waste Classification', desc:'AI-powered waste sorting system using computer vision to classify recyclables, organics, and residuals.', slots:2, specialty:'AI / Computer Vision', members:2, maxMembers:4, course:'BSIT', status:'Open', availability:'-2/4' },
   { id:'g2', name:'AirCast: AI-Based Tool', desc:'Real-time air quality monitoring and forecasting tool using ML models trained on environmental sensor data.', slots:3, specialty:'AI / Data Science', members:1, maxMembers:4, course:'BSCS', status:'Open', availability:'-3/4' },
@@ -74,7 +136,7 @@ export const SEED_GROUPS: GroupData[] = [
   { id:'g4', name:'LearnBot: Adaptive Tutoring', desc:'Personalized AI tutoring platform that adapts to K-12 learners through real-time performance analysis.', slots:2, specialty:'EdTech / AI', members:2, maxMembers:4, course:'BSIT', status:'Open', availability:'-2/4' },
 ];
 
-//Finder Students 
+// ── Finder Students ─────────────────────────────────────────────────────
 export const STUDENTS: StudentData[] = [
   { id:'s1',  name:'Juan B. ASD',       specialty:'Document / UI Design', group:'Energy Saving Pro',   availability:'-2/4', year:'3rd Year', course:'BSIT', skills:['UI/UX','Figma','Documentation'],       status:'Has a group',       email:'juan.asd@sti.edu.ph' },
   { id:'s2',  name:'Suka B. Blyat',     specialty:'Front-End',            group:'Capstone Management', availability:'-1/4', year:'3rd Year', course:'BSCS', skills:['React','HTML','CSS'],                   status:'Has a group',       email:'suka.blyat@sti.edu.ph' },
@@ -90,7 +152,7 @@ export const STUDENTS: StudentData[] = [
   { id:'s12', name:'Luis Mendoza',      specialty:'IoT / Hardware',       group:'--',                  availability:'--',   year:'3rd Year', course:'BSCS', skills:['Arduino','C++','Raspberry Pi'],         status:'Looking for group', email:'luis.mendoza@sti.edu.ph' },
 ];
 
-//Finder Groups
+// ── Finder Groups ────────────────────────────────────────────────────────
 export const GROUPS: GroupData[] = [
   { id:'g1',  name:'Energy Saving Pro',    members:2, maxMembers:4, course:'BSIT', specialty:'IoT / Embedded Systems',  desc:'Smart energy consumption monitoring and automation system.',  status:'Open', availability:'-2/4' },
   { id:'g2',  name:'Capstone Management',  members:3, maxMembers:4, course:'BSCS', specialty:'Web / Project Management', desc:'Integrated platform for managing capstone projects.',         status:'Open', availability:'-1/4' },
@@ -104,7 +166,7 @@ export const GROUPS: GroupData[] = [
   { id:'g10', name:'ByteShield',           members:2, maxMembers:4, course:'BSCS', specialty:'Cybersecurity',            desc:'Network intrusion detection system using ML models.',         status:'Open', availability:'-2/4' },
 ];
 
-//Auth Credentials 
+// ── Auth Credentials ─────────────────────────────────────────────────────
 export const VALID_USERS: Record<string, UserCredential[]> = {
   student: [
     { id:'2023-00001',       password:'juan123',    name:'Juan Dela Cruz' },
@@ -119,7 +181,7 @@ export const VALID_USERS: Record<string, UserCredential[]> = {
   ],
 };
 
-//AI Config 
+// ── AI Config ────────────────────────────────────────────────────────────
 export const AI_CONFIG = {
   model: 'claude-sonnet-4-6',
   maxTokens: 1000,
@@ -128,7 +190,7 @@ export const AI_CONFIG = {
   titlePromptTemplate: `You are a capstone research title recommender for STI Philippines students. The student just joined "{groupName}". Generate exactly 3 capstone title suggestions. Return ONLY a valid JSON array of 3 strings. No markdown.`,
 };
 
-//Helpers
+// ── Helpers ──────────────────────────────────────────────────────────────
 const NAME_POOL = [
   'Dela Cruz, Juan','Santos, Maria','Reyes, Carlo','Mendoza, Luis',
   'Cruz, Angela','Villanueva, Ramon','Aquino, Gina','Dela Torre, Mark',

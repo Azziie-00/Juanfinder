@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Row, Col, InputGroup, Form, Spinner } from 'react-bootstrap';
 import Layout from '../components/Layout';
+import { useAuth } from '../context/useAuth';
 import { STATS, ADVISER, SEED_GROUPS, AI_CONFIG } from '../data/datas';
 import type { GroupData } from '../data/datas';
 import '../styles/dashboard.css';
@@ -53,10 +54,12 @@ function Calendar() {
 }
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const firstName = (user?.name || 'Student').trim().split(' ')[0];
   const [groups, setGroups]           = useState<GroupData[]>(SEED_GROUPS.map(g => ({ ...g })));
   const [joined, setJoined]           = useState<string | null>(null);
   const [chatHistory, setChatHistory] = useState<AIMessage[]>([]);
-  const [messages, setMessages]       = useState<ChatMessage[]>([{ role:'ai', text:"Hi! I'm JUAN-AI. Tap any group to join and I'll recommend research titles for you!" }]);
+  const [messages, setMessages]       = useState<ChatMessage[]>([{ role:'ai', text:`Hi ${firstName}! I'm JUAN-AI. Tap any group to join and I'll recommend research titles for you!` }]);
   const [inputVal, setInputVal]       = useState('');
   const [aiLoading, setAiLoading]     = useState(false);
   const [titles, setTitles]           = useState<string[]>([]);

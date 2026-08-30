@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Modal, Button, Form, Table, Badge } from 'react-bootstrap';
+import { Modal, Button, Form, Table, Badge, Dropdown } from 'react-bootstrap';
 import Layout from '../components/Layout';
 import { STUDENTS, GROUPS, getMemberNames, getInitials } from '../data/datas';
 import type { GroupData, StudentData } from '../data/datas';
@@ -28,6 +28,7 @@ interface CreateForm { name: string; course: string; specialty: string; max: str
 export default function Finder() {
   const { user }  = useAuth();
   const [filter, setFilter]       = useState<FilterType>('ALL');
+  const [courseFilter, setCourseFilter] = useState<string>('ALL');
   const [page, setPage]           = useState(1);
   const [groups, setGroups]       = useState<GroupData[]>(GROUPS.map(g => ({ ...g })));
   const [toast, setToast]         = useState('');
@@ -47,13 +48,18 @@ export default function Finder() {
   }, [toast]);
 
   // ── Data ──
+  const COURSES = Array.from(new Set([...STUDENTS.map(s => s.course), ...groups.map(g => g.course)].filter(Boolean))).sort();
+
   const getRows = (): RowItem[] => {
-    if (filter === 'STUDENT') return STUDENTS.map(s => ({ ...s, _type:'student' as const }));
-    if (filter === 'GROUP')   return groups.map(g   => ({ ...g, _type:'group'   as const }));
-    return [
+    let list: RowItem[];
+    if (filter === 'STUDENT') list = STUDENTS.map(s => ({ ...s, _type:'student' as const }));
+    else if (filter === 'GROUP') list = groups.map(g => ({ ...g, _type:'group' as const }));
+    else list = [
       ...STUDENTS.map(s => ({ ...s, _type:'student' as const })),
       ...groups.map(g   => ({ ...g, _type:'group'   as const })),
     ];
+    if (courseFilter !== 'ALL') list = list.filter(r => r.course === courseFilter);
+    return list;
   };
   const rows  = getRows();
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -131,11 +137,11 @@ export default function Finder() {
 
         {/* Toolbar */}
         <div className="finder-toolbar d-flex align-items-center gap-2 flex-wrap px-3 py-2">
-          <div className="dropdown">
-            <button className="filter-dropdown-btn dropdown-toggle" data-bs-toggle="dropdown">
+          <Dropdown>
+            <Dropdown.Toggle as="button" className="filter-dropdown-btn">
               Filter by: <strong>{filter}</strong>
-            </button>
-            <ul className="dropdown-menu finder-dropdown-menu">
+            </Dropdown.Toggle>
+            <Dropdown.Menu as="ul" className="finder-dropdown-menu">
               {(['ALL','STUDENT','GROUP'] as FilterType[]).map(f => (
                 <li key={f}>
                   <button className={`dropdown-item finder-dropdown-item${filter===f?' active':''}`}
@@ -144,8 +150,23 @@ export default function Finder() {
                   </button>
                 </li>
               ))}
-            </ul>
-          </div>
+            </Dropdown.Menu>
+          </Dropdown>
+          <Dropdown>
+            <Dropdown.Toggle as="button" className="filter-dropdown-btn">
+              Course: <strong>{courseFilter}</strong>
+            </Dropdown.Toggle>
+            <Dropdown.Menu as="ul" className="finder-dropdown-menu">
+              {(['ALL', ...COURSES]).map(c => (
+                <li key={c}>
+                  <button className={`dropdown-item finder-dropdown-item${courseFilter===c?' active':''}`}
+                    onClick={() => { setCourseFilter(c); setPage(1); }}>
+                    {c}
+                  </button>
+                </li>
+              ))}
+            </Dropdown.Menu>
+          </Dropdown>
           <div className="flex-grow-1"></div>
           <Button className="create-group-btn" onClick={() => setCreateOpen(true)}>Create Group</Button>
           <button className="page-arrow" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>
