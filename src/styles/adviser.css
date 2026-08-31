@@ -1,4 +1,4 @@
-/* ── Adviser page ── */
+/*Adviser page*/
 .adviser-body { flex: 1; overflow-y: auto; padding: 16px 20px 24px; background: var(--bg-page); }
 
 .adviser-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
@@ -54,7 +54,7 @@
 
 .adv-empty { padding: 40px; text-align: center; color: rgba(26,42,74,.4); font-style: italic; }
 
-/* ── Adviser detail modal ── */
+/*Adviser detail modal*/
 .adv-detail-modal .modal-content { background: transparent; border: none; box-shadow: none; }
 .adv-detail-modal .modal-dialog { max-width: 900px; }
 .adv-detail-inner { display: flex; gap: 16px; min-height: 460px; }

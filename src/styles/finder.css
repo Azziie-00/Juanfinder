@@ -1,4 +1,4 @@
-/* ── Finder toolbar ── */
+/*Finder toolbar*/
 .finder-toolbar { background: var(--bg-page); flex-shrink: 0; border-bottom: 1px solid rgba(26,42,74,.1); }
 
 .filter-dropdown-btn {
@@ -40,7 +40,7 @@
 .page-arrow:hover    { background: var(--navy); color: #fff; }
 .page-arrow:disabled { opacity: .3; cursor: not-allowed; }
 
-/* ── Table ── */
+/*Table*/
 .table-wrap { background: var(--bg-page); }
 
 .finder-table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -66,7 +66,7 @@
 .status-pill.open { background: rgba(46,204,113,.18); color: #1a7a3a; }
 .status-pill.full { background: rgba(26,42,74,.1); color: rgba(26,42,74,.5); }
 
-/* ── Footer ── */
+/*Footer*/
 .finder-footer { background: var(--bg-page); border-top: 1px solid rgba(26,42,74,.1); flex-shrink: 0; }
 .back-btn {
   background: var(--navy); color: #fff; border: none; border-radius: 30px;
@@ -76,7 +76,7 @@
 .back-btn:hover { background: var(--navy-mid); }
 .page-info { font-size: 12px; color: rgba(26,42,74,.55); font-weight: 600; }
 
-/* ── Group Detail Modal ── */
+/*Group Detail Modal*/
 .jf-group-detail-modal .modal-content {
   background: var(--bg-page); border: none; border-radius: 20px;
   overflow: hidden; max-height: 88vh;
@@ -140,13 +140,13 @@
 .gd-btn.joined { background: var(--green); color: var(--green-dark); cursor: default; }
 .gd-btn.joined:hover { filter: none; }
 
-/* ── jf-modal (shared dark modal style) ── */
+/*jf-modal (shared dark modal style)*/
 .jf-modal .modal-content { background: var(--navy); border: none; border-radius: 18px; }
 .jf-modal .modal-header  { background: var(--navy-mid); border-bottom: none; border-radius: 18px 18px 0 0; padding: 22px 20px 16px; }
 .jf-modal .modal-footer  { border-top: 1px solid rgba(255,255,255,.08); padding: 12px 20px; }
 .jf-modal .btn-close     { filter: invert(1); }
 
-/* Role modal */
+/*Role modal*/
 .role-option-btn {
   width: 100%; padding: 13px 18px; background: var(--navy-mid);
   border: 2px solid transparent; border-radius: 12px;
@@ -158,7 +158,7 @@
 .role-option-btn.selected { border-color: var(--green); background: rgba(46,204,113,.1); }
 .role-option-btn.selected i { color: var(--green); }
 
-/* ── Mobile ── */
+/*Mobile*/
 @media (max-width: 768px) {
   .finder-toolbar { flex-wrap: wrap; }
   .filter-dropdown-btn { font-size: 12px; padding: 8px 14px; }

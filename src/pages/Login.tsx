@@ -58,7 +58,7 @@ export default function Login() {
 
   return (
     <div className="lp-root">
-      {/* Navbar */}
+      {/*Navigation Bar*/}
       <nav className="lp-nav navbar">
         <div className="d-flex align-items-center gap-2">
           <span className="lp-sti-badge">STI</span>
@@ -67,7 +67,7 @@ export default function Login() {
         <Button className="lp-login-btn" onClick={openModal}>LOGIN</Button>
       </nav>
 
-      {/* Hero */}
+      {/*Hero*/}
       <section className="lp-hero">
         <div className="lp-hero-text">
           <h1 className="lp-hero-title">Find Your Group for Capstone Projects</h1>
@@ -95,7 +95,7 @@ export default function Login() {
         </div>
       </section>
 
-      {/* How it Works */}
+      {/*How it Works*/}
       <section className="lp-how">
         <h2 className="lp-how-title">How JuanFinder Works</h2>
         <div className="d-flex justify-content-center gap-4 flex-wrap">
@@ -114,7 +114,7 @@ export default function Login() {
         JuanFinder System &nbsp;|&nbsp; Contact: &nbsp;JuanFnder@gmail.com
       </footer>
 
-      {/* Login Modal */}
+      {/*Login Modal*/}
       <Modal show={show} onHide={closeModal} centered className="jf-login-modal" backdrop="static">
         <Modal.Header closeButton closeVariant="white" className="lp-modal-header">
           <div className="d-flex align-items-center gap-2 mb-1">

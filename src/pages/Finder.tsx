@@ -177,7 +177,7 @@ export default function Finder() {
           </button>
         </div>
 
-        {/* Table */}
+        {/*Table*/}
         <div className="table-wrap flex-grow-1" style={{ overflowY:'auto', overflowX:'auto', padding:'0 12px' }}>
           <Table className="finder-table mb-0">
             <thead><tr>{cols.map(c => <th key={c}>{c}</th>)}</tr></thead>
@@ -215,7 +215,7 @@ export default function Finder() {
           </Table>
         </div>
 
-        {/* Footer */}
+        {/*Footer*/}
         <div className="finder-footer d-flex align-items-center justify-content-between px-3 py-2">
           <button className="back-btn" onClick={() => window.history.back()}>
             <i className="ti ti-arrow-left me-1"></i> BACK
@@ -320,7 +320,7 @@ export default function Finder() {
         })()}
       </Modal>
 
-      {/* Role Selection Modal */}
+      {/*Role Selection Modal*/}
       <Modal show={roleModal.open} onHide={() => setRoleModal({ open:false, group:null, skills:[] })} centered className="jf-modal">
         <Modal.Header closeButton closeVariant="white" className="flex-column align-items-center">
           <div className="modal-icon mb-2" style={{ background:'rgba(46,204,113,.2)', color:'var(--green)' }}><i className="ti ti-users-group"></i></div>
@@ -342,7 +342,7 @@ export default function Finder() {
         </Modal.Body>
       </Modal>
 
-      {/* Create Group Modal */}
+      {/*Create Group Modal*/}
       <Modal show={createOpen} onHide={closeCreate} centered className="jf-modal">
         <Modal.Header closeButton closeVariant="white" className="flex-column align-items-center">
           <div className="modal-icon mb-2" style={{ background:'rgba(245,158,11,.2)', color:'var(--amber)', fontSize:26 }}><i className="ti ti-users-group"></i></div>
