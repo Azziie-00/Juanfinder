@@ -12,6 +12,7 @@ const DAYS   = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 interface ChatMessage { role: 'ai' | 'user'; text: string; }
 interface AIMessage   { role: 'user' | 'assistant'; content: string; }
 
+/* Ai Chat*/
 async function callAI(systemPrompt: string, messages: AIMessage[]): Promise<string> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

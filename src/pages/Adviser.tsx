@@ -76,7 +76,7 @@ export default function Adviser() {
         </div>
       </div>
 
-      {/* Apply Modal */}
+      {/*Apply Modal*/}
       <Modal show={!!modalAdviser} onHide={() => setModalAdviser(null)} centered className="jf-modal">
         {modalAdviser && (
           <>
@@ -106,7 +106,7 @@ export default function Adviser() {
         )}
       </Modal>
 
-      {/* Detail Modal */}
+      {/*Detail Modal*/}
       <Modal show={!!detailAdviser} onHide={() => setDetailAdviser(null)} centered size="lg" className="adv-detail-modal">
         {detailAdviser && (
           <Modal.Body className="p-0">

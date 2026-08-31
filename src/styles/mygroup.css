@@ -1,4 +1,4 @@
-/* ── My Group page ── */
+/*My Group page*/
 .mygroup-body {
   flex: 1; background: var(--bg-page);
   display: flex; align-items: center; justify-content: center;
@@ -6,7 +6,7 @@
 }
 .group-view { display: flex; gap: 18px; width: 100%; max-width: 1300px; height: 100%; }
 
-/* ── Left card ── */
+/*Left card*/
 .mg-left-card {
   width: 320px; flex-shrink: 0; background: var(--blue-card);
   border-radius: 18px; display: flex; flex-direction: column;
@@ -46,7 +46,7 @@
 }
 .mg-pending-badge:hover { filter: brightness(1.1); }
 
-/* ── Right card ── */
+/*Right card*/
 .mg-right-card {
   flex: 1; background: var(--blue-card); border-radius: 18px;
   display: flex; flex-direction: column; padding: 20px; gap: 14px; overflow: hidden;
@@ -62,7 +62,7 @@
 .mg-skill-list, .mg-slot-list { display: flex; flex-direction: column; gap: 8px; }
 .mg-skill-pill, .mg-slot-pill { background: #fff; color: var(--navy); border-radius: 30px; padding: 10px 14px; font-size: 13px; font-weight: 700; text-align: center; text-transform: uppercase; letter-spacing: .3px; }
 
-/* Action buttons */
+/*Action buttons*/
 .mg-actions { display: flex; gap: 14px; justify-content: center; flex-shrink: 0; }
 .mg-btn     { border: none; border-radius: 30px; padding: 12px 36px; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: filter .15s, transform .1s; }
 .mg-btn:hover  { filter: brightness(1.08); }
@@ -70,7 +70,7 @@
 .mg-btn.edit   { background: var(--navy); color: var(--amber); }
 .mg-btn.back   { background: var(--navy); color: #fff; }
 
-/* Pending cards */
+/*Pending cards*/
 .pending-card   { background: var(--navy-mid); border-radius: 10px; padding: 12px 14px; display: flex; align-items: center; gap: 12px; }
 .pending-avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--navy-light); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; }
 .pending-info   { flex: 1; min-width: 0; }
@@ -81,7 +81,7 @@
 .pending-btn.approve { background: var(--green); color: var(--green-dark); }
 .pending-btn.decline { background: rgba(224,92,92,.25); color: #ff8a8a; }
 
-/* ── Mobile ── */
+/*Mobile View*/
 @media (max-width: 768px) {
   .mygroup-body  { padding: 12px 12px 80px; align-items: flex-start; overflow-y: auto; height: auto; min-height: calc(100dvh - 64px); }
   .group-view    { flex-direction: column; height: auto; }

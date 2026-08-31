@@ -85,7 +85,7 @@ export default function MyGroup() {
       <div className="mygroup-body">
         <div className="group-view">
 
-          {/* LEFT CARD */}
+          {/*Left Card*/}
           <div className="mg-left-card">
             <div className="mg-group-header">
               <div className="mg-group-icon"><i className="ti ti-users-group"></i></div>
@@ -114,7 +114,7 @@ export default function MyGroup() {
             </div>
           </div>
 
-          {/* RIGHT CARD */}
+          {/*Right Card*/}
           <div className="mg-right-card">
             <div className="mg-desc-box">
               <div className="mg-desc-title">Description:</div>
@@ -152,7 +152,7 @@ export default function MyGroup() {
         </div>
       </div>
 
-      {/* Edit Modal */}
+      {/*Edit Modal*/}
       <Modal show={editOpen} onHide={() => setEditOpen(false)} centered className="jf-modal">
         <Modal.Header closeButton closeVariant="white" className="flex-column align-items-center">
           <div className="modal-icon mb-2"><i className="ti ti-edit"></i></div>
@@ -192,7 +192,7 @@ export default function MyGroup() {
         </Modal.Footer>
       </Modal>
 
-      {/* Pending Requests Modal */}
+      {/*Pending Requests Modal*/}
       <Modal show={pendingOpen} onHide={() => setPendingOpen(false)} centered className="jf-modal">
         <Modal.Header closeButton closeVariant="white" className="flex-column align-items-center">
           <div className="modal-icon mb-2" style={{ background:'rgba(245,158,11,.15)', color:'var(--amber)' }}><i className="ti ti-clock"></i></div>

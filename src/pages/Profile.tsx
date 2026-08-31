@@ -45,7 +45,7 @@ export default function Profile() {
       <div className="profile-body">
         <div className="profile-grid">
 
-          {/* LEFT — Profile card */}
+          {/*Left - Profile card*/}
           <div className="profile-left">
             <div className="profile-header">
               <div className="profile-header-icon"><i className="ti ti-user"></i></div>
@@ -116,7 +116,7 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* Edit Modal */}
+      {/*Edit Modal*/}
       <Modal show={editOpen} onHide={() => setEditOpen(false)} centered className="jf-modal">
         <Modal.Header closeButton closeVariant="white" className="flex-column align-items-center">
           <div className="modal-icon mb-2"><i className="ti ti-edit"></i></div>

@@ -132,7 +132,7 @@ export default function Library() {
     <Layout>
       <div className="library-body">
 
-        {/* Filter tabs + search */}
+        {/*Filter tabs + search*/}
         <div className="library-toolbar d-flex align-items-center gap-3 flex-wrap">
           <div className="d-flex gap-2">
             {(['CAPSTONE', 'THESIS'] as Category[]).map(cat => (
@@ -159,7 +159,7 @@ export default function Library() {
           </InputGroup>
         </div>
 
-        {/* Grid */}
+        {/*Grid*/}
         <div className="library-grid">
           {filtered.length === 0 ? (
             <div className="lib-empty">
@@ -183,7 +183,7 @@ export default function Library() {
         </div>
       </div>
 
-      {/* Detail Modal */}
+      {/*Detail Modal*/}
       <Modal show={!!selected} onHide={() => setSelected(null)} centered size="lg" className="lib-modal">
         {selected && (
           <>
