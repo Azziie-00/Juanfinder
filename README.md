@@ -1,3 +1,5 @@
+If you want to run it on the mobile browser type this in the VS CODE terminal "npm run dev -- --host"
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
