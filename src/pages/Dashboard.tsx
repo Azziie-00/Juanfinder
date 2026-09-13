@@ -1,18 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Row, Col, InputGroup, Form, Spinner } from 'react-bootstrap';
 import Layout from '../components/Layout';
+import Calendar from '../components/Calendar';
 import { useAuth } from '../context/useAuth';
-import { STATS, ADVISER, SEED_GROUPS, AI_CONFIG } from '../data/datas';
+import { STATS, ADVISER, SEED_GROUPS, AI_CONFIG, ADVISERS } from '../data/datas';
 import type { GroupData } from '../data/datas';
 import '../styles/dashboard.css';
 
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const DAYS   = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 
 interface ChatMessage { role: 'ai' | 'user'; text: string; }
 interface AIMessage   { role: 'user' | 'assistant'; content: string; }
 
-/* Ai Chat*/
 async function callAI(systemPrompt: string, messages: AIMessage[]): Promise<string> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -23,39 +22,9 @@ async function callAI(systemPrompt: string, messages: AIMessage[]): Promise<stri
   return (data.content as Array<{ text?: string }> || []).map(i => i.text || '').join('');
 }
 
-function Calendar() {
-  const now = new Date();
-  const [yr, setYr] = useState(now.getFullYear());
-  const [mo, setMo] = useState(now.getMonth());
-  const first = new Date(yr, mo, 1).getDay();
-  const total = new Date(yr, mo + 1, 0).getDate();
-  const prev  = () => { if (mo===0){setMo(11);setYr(y=>y-1);}else setMo(m=>m-1); };
-  const next  = () => { if (mo===11){setMo(0);setYr(y=>y+1);}else setMo(m=>m+1); };
-  return (
-    <div className="calendar-card h-100">
-      <div className="cal-header">
-        <button className="cal-nav" onClick={prev}><i className="ti ti-chevron-left"></i></button>
-        <div className="cal-title">Calendar</div>
-        <button className="cal-nav" onClick={next}><i className="ti ti-chevron-right"></i></button>
-      </div>
-      <div className="cal-scroll">
-        <div className="cal-month-label">{MONTHS[mo]} {yr}</div>
-        <div className="cal-grid">
-          {DAYS.map(d => <div key={d} className="cal-head">{d}</div>)}
-          {Array(first).fill(null).map((_, i) => <div key={`b${i}`} className="cal-day empty"></div>)}
-          {Array.from({ length: total }, (_, i) => i + 1).map(d => {
-            const sun   = (first + d - 1) % 7 === 0;
-            const today = d===now.getDate() && mo===now.getMonth() && yr===now.getFullYear();
-            return <div key={d} className={`cal-day${sun?' sun':''}${today?' today':''}`}>{d}</div>;
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function Dashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const firstName = (user?.name || 'Student').trim().split(' ')[0];
   const [groups, setGroups]           = useState<GroupData[]>(SEED_GROUPS.map(g => ({ ...g })));
   const [joined, setJoined]           = useState<string | null>(null);
@@ -155,6 +124,17 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
+            <div className="adviser-rec-card">
+              <div className="groups-title">Recommended adviser <span className="ai-badge">AI-powered</span></div>
+              <div className="adviser-rec-item">
+                <div className="adviser-rec-avatar"><i className="ti ti-user"></i></div>
+                <div className="adviser-rec-info">
+                  <div className="adviser-rec-name">{ADVISERS[0].name}</div>
+                  <div className="adviser-rec-bio">{ADVISERS[0].bio}</div>
+                </div>
+                <button className="adviser-rec-apply" onClick={() => navigate('/adviser')}>Apply →</button>
+              </div>
+            </div>
           </Col>
 
           <Col xs={12} lg={4}>
@@ -162,7 +142,7 @@ export default function Dashboard() {
               <div className="ai-panel-title">JUAN-AI Assistant</div>
               <div className="ai-recs">
                 <div className="ai-recs-label">Group recommendations</div>
-                {groups.map(g => (
+                {[...groups].reverse().map(g => (
                   <div key={g.id} className="ai-rec-item" onClick={() => joinGroup(g)} style={joined===g.name?{borderLeft:'3px solid #f59e0b'}:{}}>
                     <div className="ai-rec-item-top"><span>{g.name}</span><span className="slots">{g.slots} open</span></div>
                     <div className="ai-rec-item-desc">{g.desc}</div>
