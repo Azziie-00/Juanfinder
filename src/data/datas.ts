@@ -63,6 +63,47 @@ export interface AuthUser {
 
 //Stats
 export const STATS = { finder: 400, adviser: 10 };
+
+//Adviser dashboard data
+export const ADVISER_STATS = { advisee: 10, group: 18, studentList: 250 };
+
+//Advisee groups (Advisee page)
+export interface AdviseeGroup {
+  id: string;
+  groupName: string;
+  title: string;
+  members: string[];
+  pending: boolean;
+}
+
+export const ADVISEE_GROUPS: AdviseeGroup[] = [
+  { id:'ag1', groupName:'JUANFINDER GROUP', title:'JUAN: A web-based capstone project', members:['Cyrus','Zueniga','Sale','Balingasa'], pending:true },
+  { id:'ag2', groupName:'Capstone',  title:'', members:[], pending:false },
+  { id:'ag3', groupName:'Albertos',  title:'', members:[], pending:false },
+  { id:'ag4', groupName:'Chap',      title:'', members:[], pending:false },
+];
+
+export interface AdviserAnnouncement { title: string; detail: string; }
+export const ADVISER_ANNOUNCEMENT: AdviserAnnouncement = {
+  title: 'Announcement',
+  detail: 'No announcement posted yet. Tap the + button to share an update with your advisees.',
+};
+
+export interface NotificationItem {
+  id: string;
+  name: string;
+  action: string;
+  time: string;
+  read: boolean;
+}
+export const NOTIFICATIONS: NotificationItem[] = [
+  { id:'n1', name:'Ma. Franchesca Mangalindan', action:"Due soon: assignment 'Web Design Presentation'", time:'Mar 28, 7:54 am', read:false },
+  { id:'n2', name:'Jerson Nolasco',              action:"Due soon: assignment '05 Laboratory Exercise'",  time:'Mar 28, 11:04 am', read:false },
+  { id:'n3', name:'Ma. Franchesca Mangalindan', action:"Graded: assignment 'Website Design Activity'",   time:'Mar 26, 8:34 am', read:true },
+  { id:'n4', name:'Ma. Franchesca Mangalindan', action:'You were awarded 100 points',                     time:'Mar 26, 8:00 am', read:true },
+  { id:'n5', name:'Ma. Franchesca Mangalindan', action:"Graded: assignment '04 Laboratory Exercise'",     time:'Mar 25, 9:12 am', read:true },
+];
+
 export const ADVISER = { name: 'Orbase, Albert', announcement: 'No announcements yet.' };
 
 //Student profile (Profile page)
@@ -129,10 +170,10 @@ export const ADVISERS: AdviserData[] = [
 
 //Seed Groups (Dashboard)
 export const SEED_GROUPS: GroupData[] = [
-  { id:'g1', name:'EcoSort: Smart Waste Classification', desc:'AI-powered waste sorting system using computer vision to classify recyclables, organics, and residuals.', slots:2, specialty:'AI / Computer Vision', members:2, maxMembers:4, course:'BSIT', status:'Open', availability:'-2/4' },
-  { id:'g2', name:'AirCast: AI-Based Tool', desc:'Real-time air quality monitoring and forecasting tool using ML models trained on environmental sensor data.', slots:3, specialty:'AI / Data Science', members:1, maxMembers:4, course:'BSCS', status:'Open', availability:'-3/4' },
-  { id:'g3', name:'Energy Saving Pro', desc:'Smart energy consumption monitoring and automation system for buildings using IoT sensors.', slots:2, specialty:'IoT / Embedded Systems', members:2, maxMembers:4, course:'BSIT', status:'Open', availability:'-2/4' },
   { id:'g4', name:'LearnBot: Adaptive Tutoring', desc:'Personalized AI tutoring platform that adapts to K-12 learners through real-time performance analysis.', slots:2, specialty:'EdTech / AI', members:2, maxMembers:4, course:'BSIT', status:'Open', availability:'-2/4' },
+  { id:'g3', name:'Energy Saving Pro', desc:'Smart energy consumption monitoring and automation system for buildings using IoT sensors.', slots:2, specialty:'IoT / Embedded Systems', members:2, maxMembers:4, course:'BSIT', status:'Open', availability:'-2/4' },
+  { id:'g2', name:'AirCast: AI-Based Tool', desc:'Real-time air quality monitoring and forecasting tool using ML models trained on environmental sensor data.', slots:3, specialty:'AI / Data Science', members:1, maxMembers:4, course:'BSCS', status:'Open', availability:'-3/4' },
+  { id:'g1', name:'EcoSort: Smart Waste Classification', desc:'AI-powered waste sorting system using computer vision to classify recyclables, organics, and residuals.', slots:2, specialty:'AI / Computer Vision', members:2, maxMembers:4, course:'BSIT', status:'Open', availability:'-2/4' },
 ];
 
 //Finder Students

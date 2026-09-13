@@ -1,14 +1,21 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
-import { getInitials } from '../data/datas';
+import { getInitials, NOTIFICATIONS } from '../data/datas';
 
-const NAV_LINKS = [
+const STUDENT_NAV_LINKS = [
   { to:'/',        icon:'ti-layout-dashboard', label:'Dashboard' },
   { to:'/finder',  icon:'ti-users',            label:'Finder'    },
   { to:'/adviser', icon:'ti-user-circle',      label:'Adviser'   },
   { to:'/mygroup', icon:'ti-users-group',      label:'My Group'  },
   { to:'/library', icon:'ti-books',            label:'Library'   },
+];
+
+const ADVISER_NAV_LINKS = [
+  { to:'/',         icon:'ti-home',        label:'Dashboard'    },
+  { to:'/advisee',  icon:'ti-users',       label:'Advisee'      },
+  { to:'/group',    icon:'ti-settings',    label:'Group'        },
+  { to:'/students', icon:'ti-list-details',label:'Student List' },
 ];
 
 const ROLE_LABEL: Record<string, string> = { student:'Student', adviser:'Adviser', admin:'Admin' };
@@ -17,14 +24,19 @@ export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [ddOpen, setDdOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const ddRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   const initials  = getInitials(user?.name || 'JD');
   const roleLabel = ROLE_LABEL[user?.role || 'student'] || 'Student';
+  const navLinks  = user?.role === 'adviser' ? ADVISER_NAV_LINKS : STUDENT_NAV_LINKS;
+  const unreadCount = NOTIFICATIONS.filter(n => !n.read).length;
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
       if (ddRef.current && !ddRef.current.contains(e.target as Node)) setDdOpen(false);
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
@@ -38,7 +50,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="logo-brand">JuanFinder</div>
         </div>
         <nav className="sidebar-nav">
-          {NAV_LINKS.map(({ to, icon, label }) => (
+          {navLinks.map(({ to, icon, label }) => (
             <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
               <i className={`ti ${icon}`}></i> {label}
             </NavLink>
@@ -52,33 +64,61 @@ export default function Layout({ children }: { children: ReactNode }) {
       <div className="main">
         <header className="topbar d-flex align-items-center justify-content-between">
           <div className="topbar-title">JuanFinder</div>
-          <div className="d-flex align-items-center gap-2" ref={ddRef} style={{ position: 'relative' }}>
-            <i className="ti ti-bell fs-5" style={{ color:'rgba(255,255,255,.65)', cursor:'pointer' }}></i>
-            <div className="topbar-avatar">{initials}</div>
-            <div>
-              <div className="user-name-text">{user?.name || 'Student'}</div>
-              <div className="user-role-text">{roleLabel}</div>
-            </div>
-            <i className={`ti ti-chevron-down user-chevron${ddOpen ? ' open' : ''}`} onClick={() => setDdOpen(o => !o)}></i>
+          <div className="d-flex align-items-center gap-2">
+            <div ref={notifRef} style={{ position: 'relative' }}>
+              <i className="ti ti-bell fs-5" style={{ color:'rgba(255,255,255,.65)', cursor:'pointer' }} onClick={() => setNotifOpen(o => !o)}></i>
+              {unreadCount > 0 && <span className="notif-badge">{unreadCount}</span>}
 
-            {ddOpen && (
-              <div className="user-dd">
-                <div className="user-dd-header">
-                  <div className="user-dd-avatar">{initials}</div>
-                  <div>
-                    <div className="user-dd-name">{user?.name}</div>
-                    <div className="user-dd-role">{roleLabel}</div>
+              {notifOpen && (
+                <div className="notif-dd">
+                  <div className="notif-dd-list">
+                    {NOTIFICATIONS.map(n => (
+                      <div key={n.id} className={`notif-dd-item${n.read ? '' : ' unread'}`}>
+                        <div className="notif-dd-avatar"><i className="ti ti-user"></i></div>
+                        <div className="notif-dd-body">
+                          <div className="notif-dd-name">{n.name}</div>
+                          <div className="notif-dd-action">{n.action}</div>
+                          <div className="notif-dd-time">{n.time}</div>
+                        </div>
+                        <i className="ti ti-check notif-dd-check"></i>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="notif-dd-footer">
+                    <span>See all</span>
+                    <span><i className="ti ti-settings"></i> Configure</span>
                   </div>
                 </div>
-                <div className="user-dd-divider"></div>
-                <div className="user-dd-item" onClick={() => { setDdOpen(false); navigate('/profile'); }}><i className="ti ti-user"></i> My Profile</div>
-                <div className="user-dd-item"><i className="ti ti-settings"></i> Settings</div>
-                <div className="user-dd-divider"></div>
-                <div className="user-dd-item logout" onClick={() => { logout(); navigate('/login'); }}>
-                  <i className="ti ti-logout"></i> Log Out
-                </div>
+              )}
+            </div>
+
+            <div ref={ddRef} style={{ position: 'relative' }} className="d-flex align-items-center gap-2">
+              <div className="topbar-avatar">{initials}</div>
+              <div>
+                <div className="user-name-text">{user?.name || 'Student'}</div>
+                <div className="user-role-text">{roleLabel}</div>
               </div>
-            )}
+              <i className={`ti ti-chevron-down user-chevron${ddOpen ? ' open' : ''}`} onClick={() => setDdOpen(o => !o)}></i>
+
+              {ddOpen && (
+                <div className="user-dd">
+                  <div className="user-dd-header">
+                    <div className="user-dd-avatar">{initials}</div>
+                    <div>
+                      <div className="user-dd-name">{user?.name}</div>
+                      <div className="user-dd-role">{roleLabel}</div>
+                    </div>
+                  </div>
+                  <div className="user-dd-divider"></div>
+                  <div className="user-dd-item" onClick={() => { setDdOpen(false); navigate('/profile'); }}><i className="ti ti-user"></i> My Profile</div>
+                  <div className="user-dd-item"><i className="ti ti-settings"></i> Settings</div>
+                  <div className="user-dd-divider"></div>
+                  <div className="user-dd-item logout" onClick={() => { logout(); navigate('/login'); }}>
+                    <i className="ti ti-logout"></i> Log Out
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
         {children}
