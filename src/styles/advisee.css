@@ -58,6 +58,39 @@
 
 .advisee-empty { padding: 40px; text-align: center; color: rgba(26,42,74,.4); font-style: italic; }
 
+/*Pending modal*/
+.advisee-pending-modal .modal-dialog { max-width: 900px; }
+.advisee-pending-modal .modal-content { background: transparent; border: none; box-shadow: none; }
+.advisee-pending-title-wrap { display: flex; justify-content: center; margin-bottom: 16px; }
+.advisee-pending-title {
+  background: var(--amber); color: var(--navy); font-weight: 900; font-size: 22px;
+  letter-spacing: 1px; border-radius: 30px; padding: 10px 48px; text-align: center;
+}
+.advisee-pending-close {
+  position: absolute; top: -10px; right: -10px; width: 30px; height: 30px; border-radius: 50%;
+  background: var(--navy); color: #fff; border: 2px solid var(--bg-page); display: flex;
+  align-items: center; justify-content: center; cursor: pointer; font-size: 14px;
+}
+.advisee-pending-table-card { background: #fff; border-radius: 14px; overflow: hidden; border: 1px solid rgba(26,42,74,.15); }
+.advisee-pending-table { width: 100%; border-collapse: collapse; }
+.advisee-pending-table thead th {
+  background: var(--amber); color: var(--navy); font-size: 13px; font-weight: 700;
+  text-align: center; padding: 12px; border-bottom: 2px solid rgba(26,42,74,.5);
+}
+.advisee-pending-table thead th:not(:last-child) { border-right: 1px solid rgba(26,42,74,.25); }
+.advisee-pending-table td { font-size: 13px; color: var(--navy); border-top: 1px solid rgba(26,42,74,.15); }
+.advisee-pending-table td:not(:last-child) { border-right: 1px solid rgba(26,42,74,.15); }
+.advisee-pending-group-cell { text-align: center; vertical-align: middle; padding: 12px; font-weight: 700; }
+.advisee-pending-member-row td { padding: 8px 12px; text-align: center; border-top: 1px solid rgba(26,42,74,.1); }
+.advisee-pending-member-row:first-child td { border-top: none; }
+.advisee-pending-accept-cell { text-align: center; vertical-align: middle; padding: 0; }
+.advisee-pending-accept-btn {
+  width: 100%; height: 100%; min-height: 60px; background: var(--green); color: #fff;
+  border: none; font-weight: 800; font-size: 14px; letter-spacing: .5px; cursor: pointer;
+  transition: background .15s;
+}
+.advisee-pending-accept-btn:hover { background: #26b263; }
+
 @media (max-width: 768px) {
   .advisee-body { padding: 12px 12px 80px; }
   .advisee-table thead th, .advisee-table td { font-size: 11px; padding: 8px; }

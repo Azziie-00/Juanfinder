@@ -77,10 +77,10 @@ export interface AdviseeGroup {
 }
 
 export const ADVISEE_GROUPS: AdviseeGroup[] = [
-  { id:'ag1', groupName:'JUANFINDER GROUP', title:'JUAN: A web-based capstone project', members:['Cyrus','Zueniga','Sale','Balingasa'], pending:true },
-  { id:'ag2', groupName:'Capstone',  title:'', members:[], pending:false },
-  { id:'ag3', groupName:'Albertos',  title:'', members:[], pending:false },
-  { id:'ag4', groupName:'Chap',      title:'', members:[], pending:false },
+  { id:'ag1', groupName:'JUANFINDER GROUP', title:'JUAN: A web-based capstone project', members:['Cyrus','Adrian','Zuniega','Sale'], pending:true },
+  { id:'ag2', groupName:'DEVELOPER GROUP',   title:'', members:['Prince Charles Bermudez','Albert Orbase','Chap','Lowkey Scheidue'], pending:true },
+  { id:'ag3', groupName:'Capstone',  title:'', members:[], pending:false },
+  { id:'ag4', groupName:'Albertos',  title:'', members:[], pending:false },
 ];
 
 export interface AdviserAnnouncement { title: string; detail: string; }
