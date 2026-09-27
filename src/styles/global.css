@@ -35,6 +35,11 @@ a { text-decoration: none; color: inherit; }
 /*Topbar*/
 .topbar { background: var(--navy); padding: 12px 22px; border-bottom: 1px solid rgba(255,255,255,.08); }
 .topbar-title { font-size: 22px; font-weight: 700; color: var(--amber); }
+.demo-role-control { position: relative; display: flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid rgba(245,200,66,.38); border-radius: 6px; color: var(--amber); font-size: 10px; font-weight: 700; }
+.demo-role-control select { max-width: 88px; border: 0; outline: 0; background: transparent; color: #fff; font-size: 11px; cursor: pointer; }
+.demo-role-control option { color: #1a2a4a; }
+.demo-role-control select:disabled { opacity: .55; cursor: wait; }
+.demo-role-error { position: absolute; top: calc(100% + 7px); right: 0; z-index: 1055; width: 220px; padding: 7px 9px; border: 1px solid rgba(224,92,92,.45); border-radius: 4px; background: #481f28; color: #ffd8d8; font-size: 11px; font-weight: 500; }
 .user-dropdown-wrap { position: relative; }
 .topbar-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--navy-light); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; }
 .user-name-text { font-size: 13px; font-weight: 600; color: #fff; line-height: 1.2; }

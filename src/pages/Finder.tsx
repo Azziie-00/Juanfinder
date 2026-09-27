@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Modal, Button, Form, Table, Badge, Dropdown } from 'react-bootstrap';
 import Layout from '../components/Layout';
-import { STUDENTS, GROUPS, getMemberNames, getInitials } from '../data/datas';
+import { getInitials } from '../data/datas';
 import type { GroupData, StudentData } from '../data/datas';
 import { useAuth } from '../context/useAuth';
+import { authHeaders } from '../context/authContext.instance';
 import '../styles/finder.css';
 
 const PAGE_SIZE = 8;
+const API = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
 type FilterType = 'ALL' | 'STUDENT' | 'GROUP';
 
 const ROLE_ICONS: Record<string, string> = {
@@ -26,11 +28,15 @@ type RowItem = (StudentData & { _type: 'student' }) | (GroupData & { _type: 'gro
 interface CreateForm { name: string; course: string; specialty: string; max: string; desc: string; }
 
 export default function Finder() {
-  const { user }  = useAuth();
+  const { user, viewRole, effectiveRole }  = useAuth();
   const [filter, setFilter]       = useState<FilterType>('ALL');
-  const [courseFilter, setCourseFilter] = useState<string>('ALL');
+  const [courseFilter, setCourseFilter] = useState<string>(() => user?.course || 'ALL');
   const [page, setPage]           = useState(1);
-  const [groups, setGroups]       = useState<GroupData[]>(GROUPS.map(g => ({ ...g })));
+  const [groups, setGroups]       = useState<GroupData[]>([]);
+  const [students, setStudents]   = useState<StudentData[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [studentsError, setStudentsError] = useState('');
+  const [hasGroup, setHasGroup]   = useState(false);
   const [toast, setToast]         = useState('');
   const [detailGroup, setDetailGroup]     = useState<GroupData | null>(null);
   const [detailStudent, setDetailStudent] = useState<StudentData | null>(null);
@@ -38,7 +44,7 @@ export default function Finder() {
   const [selectedRole, setSelectedRole]   = useState<string | null>(null);
   const [createOpen, setCreateOpen]       = useState(false);
   const [createDone, setCreateDone]       = useState(false);
-  const [form, setForm]                   = useState<CreateForm>({ name:'', course:'', specialty:'', max:'4', desc:'' });
+  const [form, setForm]                   = useState<CreateForm>({ name:'', course:user?.course || '', specialty:'', max:'4', desc:'' });
   const [formError, setFormError]         = useState('');
 
   useEffect(() => {
@@ -47,23 +53,65 @@ export default function Finder() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  useEffect(() => {
+    if (!user) return;
+    const loadGroups = async () => {
+      try {
+        const response = await fetch(`${API}/groups`, { headers: authHeaders(user, viewRole) });
+        if (!response.ok) throw new Error('Unable to load groups.');
+        const records = await response.json() as { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; OwnerID: number; Status: string; MaxMembers: number; MemberCount: number; MemberNames?: string; IsMember: number; IsPending: number }[];
+        setHasGroup(records.some((record) => record.IsMember === 1 || record.IsPending === 1));
+        setGroups(records.map((record) => ({
+          id: String(record.GroupID), name: record.GroupName, course: record.Course,
+          specialty: record.Specialty, desc: record.Description, ownerId: record.OwnerID,
+          members: record.MemberCount, maxMembers: record.MaxMembers, status: record.Status,
+          memberNames: record.MemberNames ? record.MemberNames.split('|') : [],
+          _joined: record.IsMember === 1 || record.IsPending === 1,
+          availability: `${Math.max(0, record.MaxMembers - record.MemberCount)} / ${record.MaxMembers}`,
+        })));
+      } catch (requestError) {
+        setFormError(requestError instanceof Error ? requestError.message : 'Unable to load groups.');
+      }
+    };
+    void loadGroups();
+  }, [user, viewRole]);
+
+  useEffect(() => {
+    if (!user) return;
+    const loadStudents = async () => {
+      setStudentsLoading(true);
+      setStudentsError('');
+      try {
+        const response = await fetch(`${API}/students`, { headers: authHeaders(user, viewRole) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Unable to load students.');
+        setStudents(data as StudentData[]);
+      } catch (requestError) {
+        setStudentsError(requestError instanceof Error ? requestError.message : 'Unable to load students.');
+      } finally {
+        setStudentsLoading(false);
+      }
+    };
+    void loadStudents();
+  }, [user, viewRole]);
+
   // ── Data ──
-  const COURSES = Array.from(new Set([...STUDENTS.map(s => s.course), ...groups.map(g => g.course)].filter(Boolean))).sort();
+  const COURSES = Array.from(new Set([...groups.map(g => g.course), ...students.map(student => student.course)].filter(Boolean))).sort();
 
   const getRows = (): RowItem[] => {
     let list: RowItem[];
-    if (filter === 'STUDENT') list = STUDENTS.map(s => ({ ...s, _type:'student' as const }));
-    else if (filter === 'GROUP') list = groups.map(g => ({ ...g, _type:'group' as const }));
-    else list = [
-      ...STUDENTS.map(s => ({ ...s, _type:'student' as const })),
-      ...groups.map(g   => ({ ...g, _type:'group'   as const })),
-    ];
+    if (filter === 'STUDENT') list = students.map(student => ({ ...student, _type:'student' as const }));
+    else list = groups.map(g => ({ ...g, _type:'group' as const }));
     if (courseFilter !== 'ALL') list = list.filter(r => r.course === courseFilter);
     return list;
   };
   const rows  = getRows();
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const slice = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const visibleStudentCounts = students.reduce<Record<string, number>>((counts, student) => {
+    if (courseFilter === 'ALL' || student.course === courseFilter) counts[student.course] = (counts[student.course] || 0) + 1;
+    return counts;
+  }, {});
 
   // ── Join group ──
   const openRoleModal = (g: GroupData) => {
@@ -72,46 +120,69 @@ export default function Finder() {
     setSelectedRole(null);
   };
 
-  const confirmJoin = () => {
+  const confirmJoin = async () => {
     const g = roleModal.group!;
+    if (!user) return;
+    const response = await fetch(`${API}/groups/${g.id}/join`, {
+      method: 'POST',
+      headers: authHeaders(user, viewRole),
+    });
+    const data = await response.json() as { success?: boolean; pending?: boolean; message?: string };
+    if (!response.ok) {
+      setToast(data.message || 'Unable to join the group.');
+      return;
+    }
     setGroups(gs => gs.map(gr => gr.id === g.id
-      ? { ...gr, members: Math.min(gr.members + 1, gr.maxMembers),
-          status: gr.members + 1 >= gr.maxMembers ? 'Full' : 'Open',
-          availability: gr.members + 1 >= gr.maxMembers ? 'Full' : `-${gr.maxMembers - (gr.members + 1)}/${gr.maxMembers}`,
-          _joined: true }
+      ? { ...gr, _joined: true }
       : gr));
-    const names = getMemberNames(g);
+    const names = g.memberNames?.length ? g.memberNames : [g.name];
     const myG = {
       id: g.id, name: g.name, desc: g.desc, specialty: g.specialty,
       maxMembers: g.maxMembers,
       skills: g.specialty?.split('/').map(s => s.trim()) ?? [selectedRole ?? 'Developer'],
-      pending: [],
+      pending: [{ id: g.id, name: user.name, course: g.course, userId: Number(user.id) }],
       members: [
         ...names.map((n, i) => ({ name: n, role: (i === 0 ? 'owner' : 'member') as 'owner' | 'member' })),
         { name: user?.name ?? 'You', role: 'member' as const },
       ],
     };
+    setHasGroup(true);
     sessionStorage.setItem('jf_mygroup', JSON.stringify(myG));
+    window.dispatchEvent(new Event('jf-mygroup-updated'));
     setRoleModal({ open:false, group:null, skills:[] });
     setDetailGroup(null);
-    setToast(`Joined "${g.name}" as ${selectedRole}!`);
+    setToast(`Join request sent for "${g.name}".`);
   };
 
   // ── Create group ──
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    if (!user || effectiveRole !== 'student') {
+      setFormError('Only students can create groups.');
+      return;
+    }
     setFormError('');
     if (!form.name)      { setFormError('Please enter a Group Name.'); return; }
     if (!form.course)    { setFormError('Please select a Course.'); return; }
     if (!form.specialty) { setFormError('Please enter a Specialty / Focus.'); return; }
     const max = parseInt(form.max);
+    const response = await fetch(`${API}/groups`, {
+      method: 'POST',
+      headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ name: form.name, course: form.course, specialty: form.specialty, maxMembers: max, description: form.desc }),
+    });
+    const data = await response.json() as { success?: boolean; message?: string; group?: { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; OwnerID: number; Status: string; MaxMembers: number; MemberCount: number } };
+    if (!response.ok || !data.group) { setFormError(data.message || 'Unable to create group.'); return; }
+    const created = data.group;
     const newG: GroupData = {
-      id: 'g' + Date.now(), name: form.name, course: form.course,
-      specialty: form.specialty, maxMembers: max, members: 1,
-      desc: form.desc || 'No description.', status: 'Open',
-      availability: `-1/${max}`, _joined: true,
-      _memberNames: [user?.name ?? 'You'],
+      id: String(created.GroupID), name: created.GroupName, course: created.Course,
+      specialty: created.Specialty, maxMembers: created.MaxMembers, members: created.MemberCount,
+      desc: created.Description, ownerId: created.OwnerID, status: created.Status,
+      availability: `${Math.max(0, created.MaxMembers - created.MemberCount)} / ${created.MaxMembers}`, _joined: true,
+      memberNames: [user.name],
+      _memberNames: [user.name],
     };
     setGroups(gs => [newG, ...gs]);
+    setHasGroup(true);
     sessionStorage.setItem('jf_mygroup', JSON.stringify({
       id: newG.id, name: newG.name, desc: newG.desc, specialty: newG.specialty,
       maxMembers: max, skills: form.specialty.split('/').map(s => s.trim()),
@@ -122,14 +193,14 @@ export default function Finder() {
 
   const closeCreate = () => {
     setCreateOpen(false); setCreateDone(false);
-    setForm({ name:'', course:'', specialty:'', max:'4', desc:'' }); setFormError('');
+    setForm({ name:'', course:user?.course || '', specialty:'', max:'4', desc:'' }); setFormError('');
   };
 
   const cols = filter === 'GROUP'
-    ? ['NAME','SPECIALTY','MEMBERS','AVAILABILITY','STATUS']
+    ? ['NAME','SPECIALTY','MEMBERS','COURSE','AVAILABILITY','STATUS']
     : filter === 'STUDENT'
-    ? ['NAME','SPECIALTY','GROUP','AVAILABILITY']
-    : ['NAME','SPECIALTY','GROUP / MEMBERS','AVAILABILITY'];
+    ? ['NAME','SPECIALTY','COURSE','GROUP','AVAILABILITY']
+    : ['NAME','SPECIALTY','GROUP / MEMBERS','COURSE','AVAILABILITY'];
 
   return (
     <Layout>
@@ -168,7 +239,9 @@ export default function Finder() {
             </Dropdown.Menu>
           </Dropdown>
           <div className="flex-grow-1"></div>
-          <Button className="create-group-btn" onClick={() => setCreateOpen(true)}>Create Group</Button>
+          {effectiveRole === 'student' && !hasGroup && (
+            <Button className="create-group-btn" onClick={() => setCreateOpen(true)}>Create Group</Button>
+          )}
           <button className="page-arrow" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>
             <i className="ti ti-arrow-left"></i>
           </button>
@@ -177,13 +250,29 @@ export default function Finder() {
           </button>
         </div>
 
+        {filter === 'STUDENT' && (
+          <section className="finder-course-summary" aria-label="Student counts by course">
+            <strong>STUDENTS BY COURSE</strong>
+            {studentsLoading && <span className="finder-course-count">Loading database students...</span>}
+            {!studentsLoading && studentsError && <span className="finder-course-count finder-data-error" role="alert">{studentsError}</span>}
+            {!studentsLoading && !studentsError && Object.entries(visibleStudentCounts).sort(([a], [b]) => a.localeCompare(b)).map(([course, count]) => (
+              <span className="finder-course-count" key={course}>
+                <b>{course}</b><span>{count} {count === 1 ? 'student' : 'students'}</span>
+              </span>
+            ))}
+            {!studentsLoading && !studentsError && <span className="finder-course-total">{rows.length} total</span>}
+          </section>
+        )}
+
         {/*Table*/}
         <div className="table-wrap flex-grow-1" style={{ overflowY:'auto', overflowX:'auto', padding:'0 12px' }}>
           <Table className="finder-table mb-0">
             <thead><tr>{cols.map(c => <th key={c}>{c}</th>)}</tr></thead>
             <tbody>
               {slice.length === 0 ? (
-                <tr><td colSpan={cols.length} className="text-center py-5" style={{ color:'rgba(26,42,74,.4)', fontStyle:'italic' }}>No records found.</td></tr>
+                <tr><td colSpan={cols.length} className="text-center py-5" style={{ color:'rgba(26,42,74,.4)', fontStyle:'italic' }}>
+                  {filter === 'STUDENT' && studentsLoading ? 'Loading students from database...' : filter === 'STUDENT' && studentsError ? studentsError : filter === 'STUDENT' ? 'No student accounts found in the database.' : 'No records found.'}
+                </td></tr>
               ) : slice.map(row => {
                 if (row._type === 'student') {
                   const s = row as StudentData & { _type: 'student' };
@@ -191,8 +280,9 @@ export default function Finder() {
                     <tr key={s.id} onClick={() => setDetailStudent(s)} style={{ cursor:'pointer' }}>
                       <td><span className="finder-name-link">{s.name}</span></td>
                       <td>{s.specialty}</td>
+                      <td>{s.course}</td>
                       <td>{s.group === '--' ? <span style={{ opacity:.4 }}>--</span> : s.group}</td>
-                      <td>{s.availability === '--' ? <span style={{ opacity:.4 }}>--</span> : s.availability}</td>
+                      <td><span className="student-availability" aria-label={s.availability === '1' ? 'Available to join a group' : 'Already in a group'}>{s.availability}</span></td>
                     </tr>
                   );
                 }
@@ -206,7 +296,10 @@ export default function Finder() {
                     </td>
                     <td>{g.specialty}</td>
                     <td>{g.members}/{g.maxMembers}</td>
-                    <td><span className={`avail-badge${isFull?' full':''}`}>{g.availability}</span></td>
+                    <td>{g.course}</td>
+                    <td><span className={`avail-badge${isFull?' full':''}`} aria-label={`${Math.max(0, g.maxMembers - g.members)} open slots out of ${g.maxMembers}`}>
+                      {Math.max(0, g.maxMembers - g.members)} / {g.maxMembers}
+                    </span></td>
                     {filter === 'GROUP' && <td><span className={`status-pill ${g.status.toLowerCase()}`}>{g.status}</span></td>}
                   </tr>
                 );
@@ -230,7 +323,7 @@ export default function Finder() {
           const g = groups.find(gr => gr.id === detailGroup.id) || detailGroup;
           const skills  = g.specialty ? g.specialty.split('/').map(s => s.trim()) : ['Developer'];
           const slots   = g.maxMembers - g.members;
-          const members = getMemberNames(g);
+          const members = g.memberNames ?? [];
           return (
             <Modal.Body className="p-0">
               <button className="gd-modal-x" onClick={() => setDetailGroup(null)}><i className="ti ti-x"></i></button>
@@ -247,7 +340,9 @@ export default function Finder() {
                   <div className="gd-members-section">
                     <div className="gd-members-label">GROUP MEMBER:</div>
                     <div className="gd-members-list">
-                      {members.map((n, i) => <div key={i} className="gd-member-pill">{n}</div>)}
+                      {members.map((n, i) => <div key={i} className={`gd-member-pill${i === 0 ? ' leader' : ''}`}>
+                        {n}{i === 0 && <span className="gd-leader-tag">Leader</span>}
+                      </div>)}
                     </div>
                   </div>
                 </div>
@@ -271,8 +366,8 @@ export default function Finder() {
                   </div>
                   <div className="gd-actions">
                     {g._joined || slots <= 0
-                      ? <button className="gd-btn joined"><i className="ti ti-check me-1"></i>{g._joined ? 'Request Sent' : 'Group Full'}</button>
-                      : <button className="gd-btn join" onClick={() => openRoleModal(g)}><i className="ti ti-circle-check me-1"></i>JOIN</button>
+                      ? <button className="gd-btn joined"><i className="ti ti-clock me-1"></i>{g._joined ? 'Pending Approval' : 'Group Full'}</button>
+                      : <button className="gd-btn join" onClick={() => openRoleModal(g)}><i className="ti ti-circle-check me-1"></i>VIEW GROUP / JOIN</button>
                     }
                     <button className="gd-btn back" onClick={() => setDetailGroup(null)}><i className="ti ti-arrow-left me-1"></i>BACK</button>
                   </div>
@@ -335,7 +430,7 @@ export default function Finder() {
             </button>
           ))}
           {selectedRole && (
-            <Button className="w-100 mt-2" style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:800, borderRadius:12, padding:'12px' }} onClick={confirmJoin}>
+              <Button className="w-100 mt-2" style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:800, borderRadius:12, padding:'12px' }} onClick={() => void confirmJoin()}>
               Confirm Role
             </Button>
           )}
@@ -398,7 +493,7 @@ export default function Finder() {
               </Form>
             </Modal.Body>
             <Modal.Footer className="gap-2">
-              <Button className="flex-grow-1" style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:700, borderRadius:10 }} onClick={handleCreate}>Create Group</Button>
+              <Button className="flex-grow-1" style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:700, borderRadius:10 }} onClick={() => void handleCreate()}>Create Group</Button>
               <Button className="flex-grow-1" style={{ background:'rgba(255,255,255,.08)', border:'none', color:'rgba(255,255,255,.55)', fontWeight:700, borderRadius:10 }} onClick={closeCreate}>Cancel</Button>
             </Modal.Footer>
           </>

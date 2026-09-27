@@ -10,6 +10,8 @@ export interface GroupData {
   course: string;
   status: string;
   availability: string;
+  ownerId?: number;
+  memberNames?: string[];
   _joined?: boolean;
   _memberNames?: string[];
 }
@@ -36,6 +38,7 @@ export interface PendingRequest {
   id: string;
   name: string;
   course: string;
+  userId?: number;
 }
 
 export interface MyGroupData {
@@ -58,7 +61,8 @@ export interface UserCredential {
 export interface AuthUser {
   name: string;
   id: string;
-  role: 'student' | 'adviser' | 'admin';
+  role: 'student' | 'adviser' | 'admin' | 'superadmin';
+  course?: string;
 }
 
 //Stats

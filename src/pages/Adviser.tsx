@@ -1,20 +1,37 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Button } from 'react-bootstrap';
 import Layout from '../components/Layout';
-import { ADVISERS } from '../data/datas';
+import { useAuth } from '../context/useAuth';
+import { authHeaders } from '../context/authContext.instance';
+import type { AdviserData } from '../data/datas';
 import '../styles/adviser.css';
 
 const PAGE_SIZE = 4;
 
 export default function Adviser() {
+  const { user, viewRole, effectiveRole } = useAuth();
+  const [advisers, setAdvisers] = useState<AdviserData[]>([]);
   const [page, setPage]           = useState(1);
   const [applied, setApplied]     = useState<Set<string>>(new Set());
-  const [modalAdviser, setModalAdviser]   = useState<typeof ADVISERS[number] | null>(null);
-  const [detailAdviser, setDetailAdviser] = useState<typeof ADVISERS[number] | null>(null);
+  const [modalAdviser, setModalAdviser]   = useState<AdviserData | null>(null);
+  const [detailAdviser, setDetailAdviser] = useState<AdviserData | null>(null);
   const [toast, setToast]         = useState('');
+  const [editOpen, setEditOpen]   = useState(false);
+  const [editBio, setEditBio]     = useState('');
+  const [editRequirements, setEditRequirements] = useState('');
 
-  const pages = Math.max(1, Math.ceil(ADVISERS.length / PAGE_SIZE));
-  const slice = ADVISERS.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  useEffect(() => {
+    if (!user) return;
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/advisers`, { headers: authHeaders(user, viewRole) })
+      .then(async response => response.ok ? response.json() : [])
+      .then(records => setAdvisers((records as { UserID: number; Name: string; Bio?: string; Requirements?: string }[]).map(record => ({
+        id: String(record.UserID), name: record.Name, slots: null, maxSlots: 10,
+        bio: record.Bio || 'No bio provided yet.', requirements: record.Requirements ? record.Requirements.split('\n').filter(Boolean) : [],
+      }))));
+  }, [user, viewRole]);
+
+  const pages = Math.max(1, Math.ceil(advisers.length / PAGE_SIZE));
+  const slice = advisers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const confirmApply = () => {
     if (!modalAdviser) return;
@@ -22,6 +39,24 @@ export default function Adviser() {
     setToast(`Application sent to ${modalAdviser.name}!`);
     setModalAdviser(null);
     setTimeout(() => setToast(''), 3000);
+  };
+
+  const openEdit = () => {
+    const ownProfile = advisers.find(adviser => adviser.id === String(user?.id));
+    setEditBio(ownProfile?.bio === 'No bio provided yet.' ? '' : ownProfile?.bio || '');
+    setEditRequirements(ownProfile?.requirements.join('\n') || '');
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/adviser/profile`, {
+      method: 'PATCH', headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ bio: editBio, requirements: editRequirements.split('\n') }),
+    });
+    if (!response.ok) return;
+    setAdvisers(current => current.map(adviser => adviser.id === String(user?.id) ? { ...adviser, bio: editBio || 'No bio provided yet.', requirements: editRequirements.split('\n').map(item => item.trim()).filter(Boolean) } : adviser));
+    setEditOpen(false);
+    setToast('Adviser details saved.');
   };
 
   return (
@@ -39,6 +74,7 @@ export default function Adviser() {
               <i className="ti ti-arrow-right"></i>
             </button>
           </div>
+          {effectiveRole === 'adviser' && <button className="adv-back-btn" onClick={openEdit}><i className="ti ti-edit"></i> EDIT REQUIREMENTS</button>}
         </div>
 
         <div className="adviser-table-card">
@@ -75,6 +111,19 @@ export default function Adviser() {
           </table>
         </div>
       </div>
+
+      <Modal show={editOpen} onHide={() => setEditOpen(false)} centered className="jf-modal">
+        <Modal.Header closeButton closeVariant="white" className="flex-column align-items-center">
+          <div className="modal-icon mb-2"><i className="ti ti-edit"></i></div>
+          <div className="modal-title-text">Edit Adviser Details</div>
+          <div className="modal-sub-text">Students will see these requirements.</div>
+        </Modal.Header>
+        <Modal.Body className="d-flex flex-column gap-3">
+          <label className="jf-label">Bio<textarea className="jf-input" rows={3} value={editBio} onChange={event => setEditBio(event.target.value)} /></label>
+          <label className="jf-label">Requirements <span style={{ fontWeight:400, fontSize:10 }}>(one per line)</span><textarea className="jf-input" rows={6} value={editRequirements} onChange={event => setEditRequirements(event.target.value)} placeholder="Project proposal\nConsultation schedule" /></label>
+        </Modal.Body>
+        <Modal.Footer className="gap-2"><Button className="flex-grow-1" style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:700 }} onClick={() => void saveEdit()}>Save</Button><Button className="flex-grow-1" style={{ background:'rgba(255,255,255,.08)', border:'none', color:'rgba(255,255,255,.55)' }} onClick={() => setEditOpen(false)}>Cancel</Button></Modal.Footer>
+      </Modal>
 
       {/*Apply Modal*/}
       <Modal show={!!modalAdviser} onHide={() => setModalAdviser(null)} centered className="jf-modal">

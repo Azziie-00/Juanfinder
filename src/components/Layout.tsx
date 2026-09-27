@@ -13,25 +13,36 @@ const STUDENT_NAV_LINKS = [
 
 const ADVISER_NAV_LINKS = [
   { to:'/',         icon:'ti-home',        label:'Dashboard'    },
+  { to:'/adviser',  icon:'ti-user-circle', label:'Adviser Profile' },
   { to:'/advisee',  icon:'ti-users',       label:'Advisee'      },
   { to:'/group',    icon:'ti-settings',    label:'Group'        },
   { to:'/students', icon:'ti-list-details',label:'Student List' },
 ];
 
-const ROLE_LABEL: Record<string, string> = { student:'Student', adviser:'Adviser', admin:'Admin' };
+const ADMIN_NAV_LINKS = [
+  { to:'/',       icon:'ti-layout-dashboard', label:'Dashboard' },
+];
+
+const ROLE_LABEL: Record<string, string> = { student:'Student', adviser:'Adviser', admin:'Admin', superadmin:'Super Admin' };
 
 export default function Layout({ children }: { children: ReactNode }) {
-  const { user, logout } = useAuth();
+  const { user, viewRole, effectiveRole, switchViewRole, logout } = useAuth();
   const navigate = useNavigate();
+  const [hasMyGroup, setHasMyGroup] = useState(() => Boolean(sessionStorage.getItem('jf_mygroup')));
   const [ddOpen, setDdOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const ddRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
   const initials  = getInitials(user?.name || 'JD');
-  const roleLabel = ROLE_LABEL[user?.role || 'student'] || 'Student';
-  const navLinks  = user?.role === 'adviser' ? ADVISER_NAV_LINKS : STUDENT_NAV_LINKS;
+  const roleLabel = ROLE_LABEL[effectiveRole || 'student'] || 'Student';
+  const navLinks  = effectiveRole === 'admin' || effectiveRole === 'superadmin' ? ADMIN_NAV_LINKS : effectiveRole === 'adviser' ? ADVISER_NAV_LINKS : STUDENT_NAV_LINKS.filter((link) => link.to !== '/mygroup' || hasMyGroup);
   const unreadCount = NOTIFICATIONS.filter(n => !n.read).length;
+
+  const switchDemoRole = (role: string) => {
+    switchViewRole(role === 'superadmin' ? null : role as 'student' | 'adviser' | 'admin');
+    navigate('/');
+  };
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -40,6 +51,12 @@ export default function Layout({ children }: { children: ReactNode }) {
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  useEffect(() => {
+    const updateGroupLink = () => setHasMyGroup(Boolean(sessionStorage.getItem('jf_mygroup')));
+    window.addEventListener('jf-mygroup-updated', updateGroupLink);
+    return () => window.removeEventListener('jf-mygroup-updated', updateGroupLink);
   }, []);
 
   return (
@@ -65,6 +82,22 @@ export default function Layout({ children }: { children: ReactNode }) {
         <header className="topbar d-flex align-items-center justify-content-between">
           <div className="topbar-title">JuanFinder</div>
           <div className="d-flex align-items-center gap-2">
+            {import.meta.env.DEV && user?.role === 'superadmin' && (
+              <div className="demo-role-control" title="Temporary preview; signed-in identity remains Super Admin">
+                <i className="ti ti-switch-2" aria-hidden="true"></i>
+                <span>Preview</span>
+                <select
+                  aria-label="Preview role"
+                  value={viewRole || 'superadmin'}
+                  onChange={(event) => switchDemoRole(event.target.value)}
+                >
+                  <option value="superadmin">Super Admin</option>
+                  <option value="student">Student</option>
+                  <option value="adviser">Adviser</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            )}
             <div ref={notifRef} style={{ position: 'relative' }}>
               <i className="ti ti-bell fs-5" style={{ color:'rgba(255,255,255,.65)', cursor:'pointer' }} onClick={() => setNotifOpen(o => !o)}></i>
               {unreadCount > 0 && <span className="notif-badge">{unreadCount}</span>}
