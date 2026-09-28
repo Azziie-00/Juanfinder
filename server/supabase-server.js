@@ -1,4 +1,9 @@
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, ".env") });
+require("dotenv").config({ path: path.resolve(process.cwd(), ".env") });
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 require("dotenv").config();
+
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const { createClient } = require("@supabase/supabase-js");
@@ -11,13 +16,22 @@ const supabase = supabaseUrl && serviceRoleKey
     ? createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
     : null;
 
-const allowedOrigins = (process.env.FRONTEND_URL || "").split(",").map((origin) => origin.trim()).filter(Boolean);
+const allowedOrigins = (process.env.FRONTEND_URL || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
 app.use(cors({
     origin(origin, callback) {
-        const isLocalDevelopmentOrigin = process.env.NODE_ENV !== "production" && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin || "");
-        if (!origin || allowedOrigins.includes(origin) || isLocalDevelopmentOrigin) return callback(null, true);
-        callback(new Error("Origin is not allowed by CORS."));
+        if (!origin) return callback(null, true);
+        const isLocalDevelopmentOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+        const isVercelOrigin = /^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin);
+        if (allowedOrigins.length === 0 || allowedOrigins.includes(origin) || isLocalDevelopmentOrigin || isVercelOrigin) {
+            return callback(null, true);
+        }
+        callback(new Error(`Origin ${origin} is not allowed by CORS.`));
     },
+    credentials: true,
 }));
 app.use(express.json());
 
