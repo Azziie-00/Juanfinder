@@ -4,11 +4,12 @@ import Layout from '../components/Layout';
 import { getInitials } from '../data/datas';
 import type { GroupData, StudentData } from '../data/datas';
 import { useAuth } from '../context/useAuth';
+import { API_BASE_URL } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
 import '../styles/finder.css';
 
 const PAGE_SIZE = 8;
-const API = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
+const API = API_BASE_URL;
 type FilterType = 'ALL' | 'STUDENT' | 'GROUP';
 
 const ROLE_ICONS: Record<string, string> = {

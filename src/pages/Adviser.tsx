@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Button } from 'react-bootstrap';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
+import { API_BASE_URL } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
 import type { AdviserData } from '../data/datas';
 import '../styles/adviser.css';
@@ -22,7 +23,7 @@ export default function Adviser() {
 
   useEffect(() => {
     if (!user) return;
-    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/advisers`, { headers: authHeaders(user, viewRole) })
+    fetch(`${API_BASE_URL}/advisers`, { headers: authHeaders(user, viewRole) })
       .then(async response => response.ok ? response.json() : [])
       .then(records => setAdvisers((records as { UserID: number; Name: string; Bio?: string; Requirements?: string }[]).map(record => ({
         id: String(record.UserID), name: record.Name, slots: null, maxSlots: 10,
@@ -49,7 +50,7 @@ export default function Adviser() {
   };
 
   const saveEdit = async () => {
-    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/adviser/profile`, {
+    const response = await fetch(`${API_BASE_URL}/adviser/profile`, {
       method: 'PATCH', headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({ bio: editBio, requirements: editRequirements.split('\n') }),
     });

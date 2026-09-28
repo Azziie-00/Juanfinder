@@ -4,6 +4,7 @@ import { Row, Col, InputGroup, Form, Spinner } from 'react-bootstrap';
 import Layout from '../components/Layout';
 import Calendar from '../components/Calendar';
 import { useAuth } from '../context/useAuth';
+import { API_BASE_URL } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
 import { ADVISER, SEED_GROUPS, AI_CONFIG, ADVISERS } from '../data/datas';
 import type { GroupData } from '../data/datas';
@@ -42,7 +43,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!user) return;
-    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/dashboard/stats`, { headers: authHeaders(user, viewRole) })
+    fetch(`${API_BASE_URL}/dashboard/stats`, { headers: authHeaders(user, viewRole) })
       .then(async response => response.ok ? response.json() : null)
       .then(data => { if (data) setStats({ finder: Number(data.finder) || 0, adviser: Number(data.adviser) || 0 }); });
   }, [user, viewRole]);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
+import { API_BASE_URL } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
 import '../styles/admin.css';
 
@@ -9,7 +10,7 @@ type AdviserOption = { UserID: number; Name: string; UserCode: string; Username:
 type AdminGroup = { GroupID: number; GroupName: string; Course: string; Status: string; MemberCount: number; MaxMembers: number };
 type Summary = { users: number; activeUsers: number; students: number; advisers: number; groups: number; openGroups: number };
 
-const API = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/admin`;
+const API = `${API_BASE_URL}/admin`;
 export default function Admin() {
   const { user } = useAuth();
   const { viewRole } = useAuth();

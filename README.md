@@ -22,6 +22,16 @@
 
 The API listens on `http://localhost:5000`; Vite defaults to `http://localhost:5173`.
 
+## Vercel deployment
+
+The frontend and Express API are served from the same Vercel deployment. In the Vercel project settings, add these environment variables for Production (and Preview too if you use preview deployments):
+
+- `SUPABASE_URL`: your Supabase project URL.
+- `SUPABASE_SERVICE_ROLE_KEY`: the Supabase service-role key. Keep it server-side; never use a `VITE_` prefix.
+- `FRONTEND_URL`: `https://juanfinder.vercel.app` (use the exact deployed origin; comma-separate additional allowed origins if needed).
+
+Do not set `VITE_API_URL` in Vercel for this same-domain setup. Production API calls use `/api`; local development continues to use `http://localhost:5000`. Redeploy after changing environment variables.
+
 Sample accounts created by the SQL script:
 
 - Student: `juan@sti.edu.ph` / `juan123`

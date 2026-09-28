@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../data/api';
 import { Modal, Button, Form, Spinner } from 'react-bootstrap';
 import { useAuth } from '../context/useAuth';
 import type { AuthUser } from '../data/datas';
@@ -92,7 +93,7 @@ export default function Login() {
     setError('');
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/login`, {
+      const response = await fetch(`${API_BASE_URL}/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

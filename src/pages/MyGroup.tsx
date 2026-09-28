@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { Modal, Button, Form } from 'react-bootstrap';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
+import { API_BASE_URL } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
 import { getInitials } from '../data/datas';
 import type { MyGroupData, GroupMember, PendingRequest } from '../data/datas';
 import '../styles/mygroup.css';
 
-const API = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
+const API = API_BASE_URL;
 
 interface EditForm { name: string; desc: string; skills: string; max: string; }
 

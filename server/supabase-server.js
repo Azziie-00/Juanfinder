@@ -5,7 +5,6 @@ const { createClient } = require("@supabase/supabase-js");
 const cors = require("cors");
 
 const app = express();
-const port = Number(process.env.PORT || 5000);
 const supabaseUrl = process.env.SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = supabaseUrl && serviceRoleKey
@@ -410,4 +409,4 @@ app.delete("/api/admin/groups/:id", getUser, requireAdmin, async (req, res) => {
     res.json({ success: true });
 });
 
-app.listen(port, () => console.log(`JuanFinder Supabase API running on http://localhost:${port}`));
+module.exports = app;
