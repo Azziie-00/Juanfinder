@@ -2,7 +2,7 @@
 .lp-nav  { background:#fff; border-bottom:1px solid rgba(26,42,74,.08); padding:0 32px; height:56px; position:sticky; top:0; z-index:100; display:flex; align-items:center; justify-content:space-between; }
 .lp-sti-badge { background:#f5c842; color:#1a2a4a; font-size:12px; font-weight:900; padding:3px 8px; border-radius:4px; }
 .lp-sti-badge.sm { font-size:11px; padding:2px 7px; }
-.lp-brand-text { font-size:17px; font-weight:900; color:#1a2a4a; text-transform:uppercase; }
+.lp-brand-text { font-size:17px; font-weight:900; color:#f5c842; text-transform:uppercase; }
 .lp-brand-text.sm { font-size:15px; }
 .lp-login-btn { background:#1a2a4a !important; border:none !important; border-radius:30px !important; padding:8px 26px !important; font-weight:700 !important; }
 .lp-login-btn:hover { background:#2e6da4 !important; }
@@ -27,7 +27,7 @@
 .jf-login-modal .modal-content { background:#1a2a4a; border:none; border-radius:20px; }
 .jf-login-modal .modal-header  { background:#253f66; border-bottom:none; border-radius:20px 20px 0 0; padding:22px 24px 16px; flex-direction:column; align-items:flex-start; }
 .jf-login-modal .btn-close     { position:absolute; top:14px; right:16px; filter:invert(1); }
-.lp-modal-header { background:#253f66; }
+.lp-modal-header { background:#f5c842; }
 .lp-modal-body   { padding:20px 24px 24px; }
 .lp-modal-title  { font-size:22px; font-weight:800; color:#fff; margin-bottom:4px; }
 .lp-modal-sub    { font-size:13px; color:rgba(255,255,255,.45); }
@@ -37,7 +37,7 @@
 .lp-role-btn i { font-size:20px; }
 .lp-role-btn:hover { filter:brightness(1.1); transform:translateY(-1px); }
 .lp-role-student { background:#fff; color:#1a2a4a; border-color:rgba(26,42,74,.2); }
-.lp-role-adviser, .lp-role-admin { background:#253f66; color:#fff; }
+.lp-role-adviser, .lp-role-admin { background:#fff; color:#1a2a4a; border-color:rgba(26,42,74,.2); }
 
 @media(max-width:768px) {
   .lp-nav { padding:0 16px; }

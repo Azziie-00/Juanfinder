@@ -18,7 +18,7 @@ a { text-decoration: none; color: inherit; }
 .app { display: flex; width: 100vw; height: 100vh; overflow: hidden; }
 
 /*Sidebar*/
-.sidebar { width: 200px; flex-shrink: 0; background: var(--navy); display: flex; flex-direction: column; height: 100vh; sborder-right: 1px solid rgba(255,255,255,.1); }
+.sidebar { width: 200px; flex-shrink: 0; background: var(--navy); display: flex; flex-direction: column; height: 100vh; border-right: 1px solid rgba(255,255,255,.1); }
 .logo { padding: 18px 16px 14px; border-bottom: 1px solid rgba(255,255,255,.1); }
 .logo-system { font-size: 10px; color: rgba(255,255,255,.45); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
 .logo-brand  { font-size: 22px; font-weight: 700; color: var(--amber); }
