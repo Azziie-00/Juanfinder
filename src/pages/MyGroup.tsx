@@ -1,38 +1,27 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Button, Form } from 'react-bootstrap';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
+import { API_BASE_URL } from '../data/api';
+import { authHeaders } from '../context/authContext.instance';
 import { getInitials } from '../data/datas';
 import type { MyGroupData, GroupMember, PendingRequest } from '../data/datas';
 import '../styles/mygroup.css';
 
-const DEMO_GROUP: MyGroupData = {
-  id: 'g-owner-1', name: 'JuanFinder',
-  desc: 'A capstone project platform that helps STI students view, create, manage groups and select an adviser for their capstone projects.',
-  specialty: 'Full-Stack / AI', maxMembers: 4,
-  skills: ['UI Designer', 'Database'],
-  pending: [{ name:'Balingasa, Adrian', course:'BSIT · 3rd Year', id:'p1' }],
-  members: [
-    { name:'Juan Dela Cruz',    role:'owner'  },
-    { name:'Balingasa, Adrian', role:'member' },
-    { name:'Paul Zuniega',      role:'member' },
-  ],
-};
+const API = API_BASE_URL;
 
 interface EditForm { name: string; desc: string; skills: string; max: string; }
 
 export default function MyGroup() {
-  const { user } = useAuth();
-  const [group, setGroup]             = useState<MyGroupData>(() => {
+  const { user, viewRole } = useAuth();
+  const [group, setGroup]             = useState<MyGroupData | null>(() => {
     const saved = sessionStorage.getItem('jf_mygroup');
-    const g: MyGroupData = saved ? JSON.parse(saved) : JSON.parse(JSON.stringify(DEMO_GROUP));
-    if (!saved && user?.name) g.members[0].name = user.name;
-    if (!saved) sessionStorage.setItem('jf_mygroup', JSON.stringify(g));
-    return g;
+    return saved ? JSON.parse(saved) : null;
   });
-  const isOwner = group.members[0]?.name === (user?.name || 'Juan Dela Cruz');
+  const isOwner = group?.members[0]?.name === (user?.name || 'Juan Dela Cruz');
   const [editOpen, setEditOpen]       = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
+  const [membershipStatus, setMembershipStatus] = useState<'Member' | 'Pending'>('Member');
   const [editForm, setEditForm]       = useState<EditForm>({ name:'', desc:'', skills:'', max:'4' });
   const [editError, setEditError]     = useState('');
 
@@ -40,6 +29,27 @@ export default function MyGroup() {
     setGroup(updated);
     sessionStorage.setItem('jf_mygroup', JSON.stringify(updated));
   };
+
+  useEffect(() => {
+    if (!user) return;
+    const loadGroup = async () => {
+      const response = await fetch(`${API}/my-group`, { headers: authHeaders(user, viewRole) });
+      if (!response.ok) return;
+      const data = await response.json() as { group: { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; MaxMembers: number; MembershipStatus: string; members: { UserID: number; Name: string; Role: string }[]; pending: { RequestID: number; UserID: number; Name: string; UserCode: string }[] } | null };
+      if (!data.group) { setGroup(null); sessionStorage.removeItem('jf_mygroup'); return; }
+      const remote = data.group;
+      setMembershipStatus(remote.MembershipStatus === 'Pending' ? 'Pending' : 'Member');
+      const nextGroup: MyGroupData = {
+        id: String(remote.GroupID), name: remote.GroupName, desc: remote.Description,
+        specialty: remote.Specialty, maxMembers: remote.MaxMembers,
+        skills: remote.Specialty.split('/').map(skill => skill.trim()).filter(Boolean),
+        members: remote.members.map(member => ({ name: member.Name, role: (member.UserID === remote.members[0]?.UserID ? 'owner' : 'member') as 'owner' | 'member' })),
+        pending: remote.pending.map(request => ({ id: String(request.RequestID), name: request.Name, course: request.UserCode, userId: request.UserID })),
+      };
+      save(nextGroup);
+    };
+    void loadGroup();
+  }, [user, viewRole]);
 
   const openEdit = () => {
     if (!group) return;
@@ -57,22 +67,27 @@ export default function MyGroup() {
     setEditOpen(false);
   };
 
-  const approvePending = (req: PendingRequest) => {
+  const approvePending = async (req: PendingRequest) => {
     if (!group) return;
     if (group.members.length >= group.maxMembers) { alert('Group is full.'); return; }
+    const response = await fetch(`${API}/groups/${group.id}/requests/${req.id}/approve`, { method: 'POST', headers: authHeaders(user, viewRole) });
+    if (!response.ok) return;
     const newMember: GroupMember = { name:req.name, role:'member' };
     save({ ...group, members:[...group.members, newMember], pending:group.pending.filter(p=>p.id!==req.id) });
   };
 
-  const declinePending = (req: PendingRequest) => {
+  const declinePending = async (req: PendingRequest) => {
     if (!group) return;
-    save({ ...group, pending:group.pending.filter(p=>p.id!==req.id) });
+    const response = await fetch(`${API}/groups/${group.id}/requests/${req.id}`, { method: 'DELETE', headers: authHeaders(user, viewRole) });
+    if (response.ok) save({ ...group, pending:group.pending.filter(p=>p.id!==req.id) });
   };
 
   if (!group) return (
     <Layout>
-      <div className="d-flex align-items-center justify-content-center flex-grow-1" style={{ background:'var(--bg-page)', color:'rgba(26,42,74,.4)' }}>
-        Loading…
+      <div className="d-flex flex-column align-items-center justify-content-center flex-grow-1 gap-2" style={{ background:'var(--bg-page)', color:'rgba(26,42,74,.4)' }}>
+        <i className="ti ti-users-group" style={{ fontSize:40, opacity:.35 }}></i>
+        <strong>No group yet</strong>
+        <span>Create a group from Finder to see it here.</span>
       </div>
     </Layout>
   );
@@ -95,6 +110,9 @@ export default function MyGroup() {
               <div className="mg-owner-avatar">{getInitials(group.members[0]?.name || 'JD')}</div>
             </div>
             <div className="mg-group-name-box">{group.name.toUpperCase()}</div>
+            {membershipStatus === 'Pending' && (
+              <div className="text-center mt-2" style={{ color:'var(--amber)', fontSize:12, fontWeight:700 }}>PENDING APPROVAL</div>
+            )}
             <div className="mg-members-section">
               <div className="mg-members-label">GROUP MEMBER:</div>
               <div className="mg-members-list">
@@ -138,7 +156,7 @@ export default function MyGroup() {
               </div>
             </div>
             <div className="mg-actions">
-              {isOwner && (
+              {isOwner && membershipStatus === 'Member' && (
                 <button className="mg-btn edit" onClick={openEdit}>
                   <i className="ti ti-circle-check"></i> EDIT
                 </button>

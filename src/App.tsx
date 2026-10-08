@@ -13,11 +13,13 @@ import Profile           from './pages/Profile';
 import Advisee           from './pages/Advisee';
 import AdviserGroup      from './pages/AdviserGroup';
 import StudentList       from './pages/StudentList';
+import Admin             from './pages/Admin';
 import './styles/global.css';
 
 function Home() {
-  const { user } = useAuth();
-  return user?.role === 'adviser' ? <AdviserDashboard /> : <Dashboard />;
+  const { effectiveRole } = useAuth();
+  if (effectiveRole === 'admin' || effectiveRole === 'superadmin') return <Admin />;
+  return effectiveRole === 'adviser' ? <AdviserDashboard /> : <Dashboard />;
 }
 
 export default function App() {
@@ -27,7 +29,7 @@ export default function App() {
         <Routes>
           <Route path="/login"    element={<Login />} />
           <Route path="/"         element={<ProtectedRoute><Home /></ProtectedRoute>} />
-          <Route path="/finder"   element={<ProtectedRoute><Finder /></ProtectedRoute>} />
+          <Route path="/finder"   element={<ProtectedRoute roles={['student']}><Finder /></ProtectedRoute>} />
           <Route path="/mygroup"  element={<ProtectedRoute><MyGroup /></ProtectedRoute>} />
           <Route path="/adviser"  element={<ProtectedRoute><Adviser /></ProtectedRoute>} />
           <Route path="/library"  element={<ProtectedRoute><Library /></ProtectedRoute>} />
@@ -35,6 +37,7 @@ export default function App() {
           <Route path="/advisee"  element={<ProtectedRoute><Advisee /></ProtectedRoute>} />
           <Route path="/group"    element={<ProtectedRoute><AdviserGroup /></ProtectedRoute>} />
           <Route path="/students" element={<ProtectedRoute><StudentList /></ProtectedRoute>} />
+          <Route path="/admin"    element={<ProtectedRoute roles={['admin', 'superadmin']}><Admin /></ProtectedRoute>} />
           <Route path="*"         element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

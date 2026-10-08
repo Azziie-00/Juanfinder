@@ -4,7 +4,9 @@ import { Row, Col, InputGroup, Form, Spinner } from 'react-bootstrap';
 import Layout from '../components/Layout';
 import Calendar from '../components/Calendar';
 import { useAuth } from '../context/useAuth';
-import { STATS, ADVISER, SEED_GROUPS, AI_CONFIG, ADVISERS } from '../data/datas';
+import { API_BASE_URL } from '../data/api';
+import { authHeaders } from '../context/authContext.instance';
+import { ADVISER, SEED_GROUPS, AI_CONFIG, ADVISERS } from '../data/datas';
 import type { GroupData } from '../data/datas';
 import '../styles/dashboard.css';
 
@@ -23,7 +25,7 @@ async function callAI(systemPrompt: string, messages: AIMessage[]): Promise<stri
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, viewRole } = useAuth();
   const navigate = useNavigate();
   const firstName = (user?.name || 'Student').trim().split(' ')[0];
   const [groups, setGroups]           = useState<GroupData[]>(SEED_GROUPS.map(g => ({ ...g })));
@@ -32,11 +34,19 @@ export default function Dashboard() {
   const [messages, setMessages]       = useState<ChatMessage[]>([{ role:'ai', text:`Hi ${firstName}! I'm JUAN-AI. Tap any group to join and I'll recommend research titles for you!` }]);
   const [inputVal, setInputVal]       = useState('');
   const [aiLoading, setAiLoading]     = useState(false);
+  const [stats, setStats]             = useState({ finder: 0, adviser: 0 });
   const [titles, setTitles]           = useState<string[]>([]);
   const [titlesGroup, setTitlesGroup] = useState('');
   const chatRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { chatRef.current?.scrollTo(0, chatRef.current.scrollHeight); }, [messages]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch(`${API_BASE_URL}/dashboard/stats`, { headers: authHeaders(user, viewRole) })
+      .then(async response => response.ok ? response.json() : null)
+      .then(data => { if (data) setStats({ finder: Number(data.finder) || 0, adviser: Number(data.adviser) || 0 }); });
+  }, [user, viewRole]);
 
   const addBubble = (text: string, role: 'ai' | 'user') =>
     setMessages(m => [...m, { role, text }]);
@@ -86,13 +96,13 @@ export default function Dashboard() {
           <Col xs={6} md={4}>
             <div className="stat-card h-100">
               <div className="stat-label"><i className="ti ti-users"></i> Finder</div>
-              <div className="stat-num">{STATS.finder}</div>
+              <div className="stat-num">{stats.finder}</div>
             </div>
           </Col>
           <Col xs={6} md={4}>
             <div className="stat-card h-100">
               <div className="stat-label"><i className="ti ti-settings"></i> Adviser</div>
-              <div className="stat-num">{STATS.adviser}</div>
+              <div className="stat-num">{stats.adviser}</div>
             </div>
           </Col>
           <Col xs={12} md={4}><Calendar /></Col>

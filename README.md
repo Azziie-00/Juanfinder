@@ -1,75 +1,41 @@
-# React + TypeScript + Vite
+# JuanFinder
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Supabase setup
 
-Currently, two official plugins are available:
+1. Create a Supabase project.
+2. Open the Supabase SQL Editor and run [`server/database.sql`](server/database.sql). It creates the PostgreSQL tables, indexes, transaction-safe group functions, and sample accounts.
+3. Use `server/.env.example` as a template and add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to `server/.env`. Preserve any existing values if you still need them to export data from SQL Server. Keep the service-role key server-side; never put it in a `VITE_` variable or commit `server/.env`.
+4. Install and start the API:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+   ```powershell
+   cd server
+   npm install
+   npm start
+   ```
 
-## React Compiler
+5. In another terminal at the repository root, start the frontend:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+   ```powershell
+   npm install
+   npm run dev
+   ```
 
-## Expanding the ESLint configuration
+The API listens on `http://localhost:5000`; Vite defaults to `http://localhost:5173`.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Vercel deployment
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+The frontend and Express API are served from the same Vercel deployment. In the Vercel project settings, add these environment variables for Production (and Preview too if you use preview deployments):
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- `SUPABASE_URL`: your Supabase project URL.
+- `SUPABASE_SERVICE_ROLE_KEY`: the Supabase service-role key. Keep it server-side; never use a `VITE_` prefix.
+- `FRONTEND_URL`: `https://juanfinder.vercel.app` (use the exact deployed origin; comma-separate additional allowed origins if needed).
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Do not set `VITE_API_URL` in Vercel for this same-domain setup. Production API calls use `/api`; local development continues to use `http://localhost:5000`. Redeploy after changing environment variables.
 
-```
+Sample accounts created by the SQL script:
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+- Student: `juan@sti.edu.ph` / `juan123`
+- Adviser: `orbase@sti.edu.ph` / `adviser123`
+- Admin: `admin` / `admin123`
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
+Change or remove these sample credentials before using a production project. The SQL script creates the Supabase schema and sample accounts; it does not transfer existing rows from a separate SQL Server database. Existing data must be exported from that server and imported into Supabase separately.

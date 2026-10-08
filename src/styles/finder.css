@@ -1,5 +1,11 @@
 /*Finder toolbar*/
 .finder-toolbar { background: var(--bg-page); flex-shrink: 0; border-bottom: 1px solid rgba(26,42,74,.1); }
+.finder-course-summary { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding: 9px 16px; background: #fff; border-bottom: 1px solid rgba(26,42,74,.12); color: var(--navy); }
+.finder-course-summary > strong { font-size: 10px; letter-spacing: .35px; }
+.finder-course-count { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px; }
+.finder-course-count b { color: #2e6da4; font-size: 13px; }
+.finder-course-count span { color: rgba(26,42,74,.65); }
+.finder-course-total { margin-left: auto; color: rgba(26,42,74,.55); font-size: 11px; font-weight: 700; }
 
 .filter-dropdown-btn {
   background: var(--navy); color: #fff; border: none; border-radius: 30px;
@@ -62,6 +68,10 @@
 
 .avail-badge      { font-weight: 700; font-size: 13px; color: var(--navy); }
 .avail-badge.full { color: rgba(26,42,74,.35); }
+.student-availability { display:inline-flex; min-width:28px; height:28px; align-items:center; justify-content:center; border-radius:50%; background:rgba(46,204,113,.18); color:#1a7a3a; font-weight:800; }
+.student-availability[aria-label="Already in a group"] { background:rgba(26,42,74,.1); color:rgba(26,42,74,.55); }
+.gd-member-pill.leader { display:flex; align-items:center; justify-content:center; gap:8px; }
+.gd-leader-tag { display:inline-flex; align-items:center; border-radius:10px; padding:2px 7px; background:var(--amber); color:var(--navy); font-size:9px; font-weight:800; text-transform:uppercase; }
 .status-pill      { display: inline-block; border-radius: 20px; padding: 3px 12px; font-size: 11px; font-weight: 700; }
 .status-pill.open { background: rgba(46,204,113,.18); color: #1a7a3a; }
 .status-pill.full { background: rgba(26,42,74,.1); color: rgba(26,42,74,.5); }
@@ -161,6 +171,8 @@
 /*Mobile*/
 @media (max-width: 768px) {
   .finder-toolbar { flex-wrap: wrap; }
+  .finder-course-summary { gap: 10px 14px; padding: 8px 12px; }
+  .finder-course-total { margin-left: 0; }
   .filter-dropdown-btn { font-size: 12px; padding: 8px 14px; }
   .create-group-btn { font-size: 12px !important; padding: 8px 16px !important; }
   .finder-table { font-size: 12px; min-width: 400px; }
