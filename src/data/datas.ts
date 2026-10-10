@@ -14,6 +14,7 @@ export interface GroupData {
   memberNames?: string[];
   _joined?: boolean;
   _memberNames?: string[];
+  finalizedAt?: string | null;
 }
 
 export interface StudentData {
@@ -27,6 +28,8 @@ export interface StudentData {
   skills: string[];
   status: string;
   email: string;
+  groupStatus?: string | null;
+  groupLeader?: string;
 }
 
 export interface GroupMember {
@@ -39,6 +42,7 @@ export interface PendingRequest {
   name: string;
   course: string;
   userId?: number;
+  expiresAt?: string;
 }
 
 export interface MyGroupData {
@@ -50,6 +54,9 @@ export interface MyGroupData {
   skills: string[];
   pending: PendingRequest[];
   members: GroupMember[];
+  status?: string;
+  finalizedAt?: string | null;
+  ownerId?: number;
 }
 
 export interface UserCredential {
@@ -63,6 +70,8 @@ export interface AuthUser {
   id: string;
   role: 'student' | 'adviser' | 'admin' | 'superadmin';
   course?: string;
+  sessionToken?: string;
+  passwordChangeRequired?: boolean;
 }
 
 //Stats
@@ -142,6 +151,7 @@ export interface AdviserData {
   slots: number | null;
   maxSlots: number;
   bio: string;
+  gender?: string;
   requirements: string[];
 }
 

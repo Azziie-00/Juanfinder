@@ -19,15 +19,16 @@ export default function Adviser() {
   const [toast, setToast]         = useState('');
   const [editOpen, setEditOpen]   = useState(false);
   const [editBio, setEditBio]     = useState('');
-  const [editRequirements, setEditRequirements] = useState('');
+  const [editGender, setEditGender] = useState('');
+  const [editRequirements, setEditRequirements] = useState<string[]>([]);
 
   useEffect(() => {
     if (!user) return;
     fetch(`${API_BASE_URL}/advisers`, { headers: authHeaders(user, viewRole) })
       .then(async response => response.ok ? response.json() : [])
-      .then(records => setAdvisers((records as { UserID: number; Name: string; Bio?: string; Requirements?: string }[]).map(record => ({
+      .then(records => setAdvisers((records as { UserID: number; Name: string; Bio?: string; Gender?: string; Requirements?: string }[]).map(record => ({
         id: String(record.UserID), name: record.Name, slots: null, maxSlots: 10,
-        bio: record.Bio || 'No bio provided yet.', requirements: record.Requirements ? record.Requirements.split('\n').filter(Boolean) : [],
+        bio: record.Bio || 'No bio provided yet.', gender: record.Gender || '', requirements: record.Requirements ? record.Requirements.split('\n').filter(Boolean) : [],
       }))));
   }, [user, viewRole]);
 
@@ -45,17 +46,23 @@ export default function Adviser() {
   const openEdit = () => {
     const ownProfile = advisers.find(adviser => adviser.id === String(user?.id));
     setEditBio(ownProfile?.bio === 'No bio provided yet.' ? '' : ownProfile?.bio || '');
-    setEditRequirements(ownProfile?.requirements.join('\n') || '');
+    setEditGender(ownProfile?.gender || '');
+    setEditRequirements(ownProfile?.requirements.length ? [...ownProfile.requirements] : ['']);
     setEditOpen(true);
   };
 
   const saveEdit = async () => {
     const response = await fetch(`${API_BASE_URL}/adviser/profile`, {
       method: 'PATCH', headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ bio: editBio, requirements: editRequirements.split('\n') }),
+      body: JSON.stringify({ bio: editBio, gender: editGender, requirements: editRequirements }),
     });
-    if (!response.ok) return;
-    setAdvisers(current => current.map(adviser => adviser.id === String(user?.id) ? { ...adviser, bio: editBio || 'No bio provided yet.', requirements: editRequirements.split('\n').map(item => item.trim()).filter(Boolean) } : adviser));
+    const data = await response.json();
+    if (!response.ok) {
+      setToast(data.message || 'Unable to save adviser requirements.');
+      return;
+    }
+    const savedRequirements = editRequirements.map(item => item.trim()).filter(Boolean);
+    setAdvisers(current => current.map(adviser => adviser.id === String(user?.id) ? { ...adviser, bio: editBio || 'No bio provided yet.', gender: editGender, requirements: savedRequirements } : adviser));
     setEditOpen(false);
     setToast('Adviser details saved.');
   };
@@ -121,7 +128,23 @@ export default function Adviser() {
         </Modal.Header>
         <Modal.Body className="d-flex flex-column gap-3">
           <label className="jf-label">Bio<textarea className="jf-input" rows={3} value={editBio} onChange={event => setEditBio(event.target.value)} /></label>
-          <label className="jf-label">Requirements <span style={{ fontWeight:400, fontSize:10 }}>(one per line)</span><textarea className="jf-input" rows={6} value={editRequirements} onChange={event => setEditRequirements(event.target.value)} placeholder="Project proposal\nConsultation schedule" /></label>
+          <label className="jf-label">Gender
+            <select className="jf-input" value={editGender} onChange={event => setEditGender(event.target.value)}>
+              <option value="">Select gender</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Prefer not to say">Prefer not to say</option>
+            </select>
+          </label>
+          <div className="jf-label">Requirements</div>
+          {editRequirements.map((requirement, index) => (
+            <div key={index} className="d-flex align-items-center gap-2">
+              <span aria-label={`Requirement ${index + 1}`} style={{ minWidth: 24 }}>{index + 1}.</span>
+              <input className="jf-input flex-grow-1" aria-label={`Requirement ${index + 1} description`} value={requirement} maxLength={250} onChange={event => setEditRequirements(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} />
+              <Button variant="outline-danger" aria-label={`Delete requirement ${index + 1}`} onClick={() => setEditRequirements(current => current.filter((_, itemIndex) => itemIndex !== index))}><i className="ti ti-trash"></i></Button>
+            </div>
+          ))}
+          <Button variant="outline-warning" onClick={() => setEditRequirements(current => [...current, ''])}><i className="ti ti-plus"></i> Add Requirement</Button>
         </Modal.Body>
         <Modal.Footer className="gap-2"><Button className="flex-grow-1" style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:700 }} onClick={() => void saveEdit()}>Save</Button><Button className="flex-grow-1" style={{ background:'rgba(255,255,255,.08)', border:'none', color:'rgba(255,255,255,.55)' }} onClick={() => setEditOpen(false)}>Cancel</Button></Modal.Footer>
       </Modal>
@@ -179,7 +202,7 @@ export default function Adviser() {
                 </div>
                 <div className="adv-req-list">
                   {detailAdviser.requirements.map((r, i) => (
-                    <div key={i} className="adv-req-pill">{r}</div>
+                    <div key={i} className="adv-req-pill">Requirement {i + 1} — {r}</div>
                   ))}
                 </div>
                 <div className="adv-detail-footer">

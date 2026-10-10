@@ -19,24 +19,29 @@ export default function MyGroup() {
     const saved = sessionStorage.getItem('jf_mygroup');
     return saved ? JSON.parse(saved) : null;
   });
-  const isOwner = group?.members[0]?.name === (user?.name || 'Juan Dela Cruz');
   const [editOpen, setEditOpen]       = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [membershipStatus, setMembershipStatus] = useState<'Member' | 'Pending'>('Member');
   const [editForm, setEditForm]       = useState<EditForm>({ name:'', desc:'', skills:'', max:'4' });
   const [editError, setEditError]     = useState('');
+  const [actionError, setActionError] = useState('');
+  const isFinalized = Boolean(group?.finalizedAt);
 
   const save = (updated: MyGroupData) => {
     setGroup(updated);
     sessionStorage.setItem('jf_mygroup', JSON.stringify(updated));
+    window.dispatchEvent(new Event('jf-mygroup-updated'));
   };
 
   useEffect(() => {
     if (!user) return;
     const loadGroup = async () => {
       const response = await fetch(`${API}/my-group`, { headers: authHeaders(user, viewRole) });
-      if (!response.ok) return;
-      const data = await response.json() as { group: { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; MaxMembers: number; MembershipStatus: string; members: { UserID: number; Name: string; Role: string }[]; pending: { RequestID: number; UserID: number; Name: string; UserCode: string }[] } | null };
+      if (!response.ok) {
+        setActionError('Unable to load your group information.');
+        return;
+      }
+      const data = await response.json() as { group: { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; OwnerID: number; Status: string; FinalizedAt: string | null; MaxMembers: number; MembershipStatus: string; members: { UserID: number; Name: string; Role: string }[]; pending: { RequestID: number; UserID: number; Name: string; UserCode: string; ExpiresAt: string }[] } | null };
       if (!data.group) { setGroup(null); sessionStorage.removeItem('jf_mygroup'); return; }
       const remote = data.group;
       setMembershipStatus(remote.MembershipStatus === 'Pending' ? 'Pending' : 'Member');
@@ -44,13 +49,16 @@ export default function MyGroup() {
         id: String(remote.GroupID), name: remote.GroupName, desc: remote.Description,
         specialty: remote.Specialty, maxMembers: remote.MaxMembers,
         skills: remote.Specialty.split('/').map(skill => skill.trim()).filter(Boolean),
-        members: remote.members.map(member => ({ name: member.Name, role: (member.UserID === remote.members[0]?.UserID ? 'owner' : 'member') as 'owner' | 'member' })),
-        pending: remote.pending.map(request => ({ id: String(request.RequestID), name: request.Name, course: request.UserCode, userId: request.UserID })),
+        members: remote.members.map(member => ({ name: member.Name, role: (member.UserID === remote.OwnerID ? 'owner' : 'member') as 'owner' | 'member' })),
+        pending: remote.pending.map(request => ({ id: String(request.RequestID), name: request.Name, course: request.UserCode, userId: request.UserID, expiresAt: request.ExpiresAt })),
+        ownerId: remote.OwnerID, status: remote.Status, finalizedAt: remote.FinalizedAt,
       };
       save(nextGroup);
     };
-    void loadGroup();
+    void loadGroup().catch(() => setActionError('Unable to load your group information.'));
   }, [user, viewRole]);
+
+  const isOwner = group?.ownerId === Number(user?.id);
 
   const openEdit = () => {
     if (!group) return;
@@ -59,13 +67,38 @@ export default function MyGroup() {
     setEditOpen(true);
   };
 
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
     if (!group) return;
-    if (!editForm.name) { setEditError('Group name is required.'); return; }
-    const max = parseInt(editForm.max);
+    if (!editForm.name.trim()) { setEditError('Group name is required.'); return; }
+    const max = Number.parseInt(editForm.max, 10);
     if (max < group.members.length) { setEditError(`Max can't be less than current member count (${group.members.length}).`); return; }
+    const response = await fetch(`${API}/groups/${group.id}`, {
+      method: 'PATCH',
+      headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ name: editForm.name, description: editForm.desc, specialty: editForm.skills, maxMembers: max }),
+    });
+    const data = await response.json();
+    if (!response.ok) { setEditError(data.message || 'Unable to save group changes.'); return; }
     save({ ...group, name:editForm.name, desc:editForm.desc, maxMembers:max, skills:editForm.skills.split(',').map(s=>s.trim()).filter(Boolean) });
     setEditOpen(false);
+  };
+
+  const finalizeGroup = async () => {
+    if (!group || !window.confirm('Finalize this group? Membership will be permanently locked.')) return;
+    const response = await fetch(`${API}/groups/${group.id}/finalize`, { method: 'POST', headers: authHeaders(user, viewRole) });
+    const data = await response.json();
+    if (!response.ok) { setActionError(data.message || 'Unable to finalize this group.'); return; }
+    save({ ...group, finalizedAt: new Date().toISOString(), status: 'Finalized', pending: [] });
+  };
+
+  const deleteGroup = async () => {
+    if (!group || !window.confirm(`Delete "${group.name}"? This removes the group and its membership records.`)) return;
+    const response = await fetch(`${API}/groups/${group.id}`, { method: 'DELETE', headers: authHeaders(user, viewRole) });
+    const data = await response.json();
+    if (!response.ok) { setActionError(data.message || 'Unable to delete this group.'); return; }
+    setGroup(null);
+    sessionStorage.removeItem('jf_mygroup');
+    window.dispatchEvent(new Event('jf-mygroup-updated'));
   };
 
   const approvePending = async (req: PendingRequest) => {
@@ -99,6 +132,7 @@ export default function MyGroup() {
   return (
     <Layout>
       <div className="mygroup-body">
+        {actionError && <div className="alert alert-danger py-2 mb-3" role="alert">{actionError}</div>}
         <div className="group-view">
 
           {/*Left Card*/}
@@ -114,13 +148,15 @@ export default function MyGroup() {
             {membershipStatus === 'Pending' && (
               <div className="text-center mt-2" style={{ color:'var(--amber)', fontSize:12, fontWeight:700 }}>PENDING APPROVAL</div>
             )}
+            {isFinalized && <div className="text-center mt-2" style={{ color:'var(--green)', fontSize:12, fontWeight:700 }}>FINALIZED — MEMBERSHIP LOCKED</div>}
+            {!isFinalized && <div className="text-center mt-2" style={{ color:'var(--navy)', fontSize:12, fontWeight:700 }}>{group.status || 'Open'} GROUP</div>}
             <div className="mg-members-section">
               <div className="mg-members-label">GROUP MEMBER:</div>
               <div className="mg-members-list">
                 {group.members.map((m, i) => (
                   <div key={i} className="mg-member-pill">
                     <span>{m.name}</span>
-                    {m.role === 'owner' && <span className="owner-tag">Owner</span>}
+                    {m.role === 'owner' && <span className="owner-tag">Group Leader</span>}
                   </div>
                 ))}
               </div>
@@ -157,10 +193,16 @@ export default function MyGroup() {
               </div>
             </div>
             <div className="mg-actions">
-              {isOwner && membershipStatus === 'Member' && (
+              {isOwner && membershipStatus === 'Member' && !isFinalized && (
                 <button className="mg-btn edit" onClick={openEdit}>
                   <i className="ti ti-circle-check"></i> EDIT
                 </button>
+              )}
+              {isOwner && membershipStatus === 'Member' && !isFinalized && (
+                <>
+                  <button className="mg-btn edit" onClick={() => void finalizeGroup()}><i className="ti ti-lock"></i> FINALIZE</button>
+                  <button className="mg-btn edit" onClick={() => void deleteGroup()}><i className="ti ti-trash"></i> DELETE GROUP</button>
+                </>
               )}
               <button className="mg-btn back" onClick={() => window.history.back()}>
                 <i className="ti ti-arrow-left"></i> BACK
@@ -207,7 +249,7 @@ export default function MyGroup() {
           </Form>
         </Modal.Body>
         <Modal.Footer className="gap-2">
-          <Button className="flex-grow-1" style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:700, borderRadius:10 }} onClick={handleEditSave}>Save Changes</Button>
+          <Button className="flex-grow-1" style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:700, borderRadius:10 }} onClick={() => void handleEditSave()}>Save Changes</Button>
           <Button className="flex-grow-1" style={{ background:'rgba(255,255,255,.08)', border:'none', color:'rgba(255,255,255,.55)', fontWeight:700, borderRadius:10 }} onClick={() => setEditOpen(false)}>Cancel</Button>
         </Modal.Footer>
       </Modal>
@@ -231,6 +273,7 @@ export default function MyGroup() {
               <div className="pending-info">
                 <div className="pending-name">{req.name}</div>
                 <div className="pending-sub">{req.course}</div>
+                {req.expiresAt && <div className="pending-sub">Expires {new Date(req.expiresAt).toLocaleString()}</div>}
               </div>
               <div className="d-flex gap-2">
                 <button className="pending-btn approve" onClick={() => approvePending(req)}>Approve</button>

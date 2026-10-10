@@ -2,13 +2,22 @@ import { useState, type ReactNode } from 'react';
 import type { AuthUser } from '../data/datas';
 import { AuthContext } from './authContext.instance';
 
+const readSavedUser = (): AuthUser | null => {
+  try {
+    const raw = sessionStorage.getItem('jf_user');
+    const saved = raw ? JSON.parse(raw) as AuthUser : null;
+    if (saved?.sessionToken) return saved;
+    sessionStorage.removeItem('jf_user');
+    sessionStorage.removeItem('jf_view_role');
+  } catch {
+    sessionStorage.removeItem('jf_user');
+    sessionStorage.removeItem('jf_view_role');
+  }
+  return null;
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    try {
-      const raw = sessionStorage.getItem('jf_user');
-      return raw ? JSON.parse(raw) : null;
-    } catch { return null; }
-  });
+  const [user, setUser] = useState<AuthUser | null>(readSavedUser);
   const [viewRole, setViewRole] = useState<AuthUser['role'] | null>(() => {
     try {
       const savedUser = sessionStorage.getItem('jf_user');
@@ -21,6 +30,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionStorage.setItem('jf_user', JSON.stringify(userData));
     sessionStorage.removeItem('jf_view_role');
     setViewRole(null);
+    setUser(userData);
+  };
+
+  const updateUser = (userData: AuthUser) => {
+    sessionStorage.setItem('jf_user', JSON.stringify(userData));
     setUser(userData);
   };
 
@@ -41,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, viewRole, effectiveRole: viewRole || user?.role || null, switchViewRole, login, logout }}>
+    <AuthContext.Provider value={{ user, viewRole, effectiveRole: viewRole || user?.role || null, switchViewRole, login, updateUser, logout }}>
       {children}
     </AuthContext.Provider>
   );
