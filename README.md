@@ -39,3 +39,13 @@ Sample accounts created by the SQL script:
 - Admin: `admin` / `admin123`
 
 Change or remove these sample credentials before using a production project. The SQL script creates the Supabase schema and sample accounts; it does not transfer existing rows from a separate SQL Server database. Existing data must be exported from that server and imported into Supabase separately.
+
+## Local AI capstone title generation
+
+The first implementation of the AI workflow is available in `ai-service/`. It adds a local FastAPI service that uses Ollama to analyze member documents and generate title options. The existing Express API proxies AI requests and checks that the requesting student is a member of the target group.
+
+Follow [the AI service setup guide](ai-service/README.md). Before using the new endpoints, run `server/ai-schema.sql` in the Supabase SQL Editor and set `AI_SERVICE_URL=http://127.0.0.1:8001` in `server/.env`.
+
+The AI panel appears on **My Group** for approved members. Each member can upload a PDF, DOCX, or TXT file (maximum 10 MB), analyze it, and save an extracted skills profile. Once profiles have been uploaded, the group can generate title options and save one selected title.
+
+This is a local-development prototype. Scanned PDFs are not supported in this first version, and adviser matching is not yet connected to the title-selection flow. Do not expose the Ollama port or AI service publicly. Before production deployment, replace the existing `x-user-id` header authentication with verified Supabase Auth tokens and enforce authorization server-side.

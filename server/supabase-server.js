@@ -423,4 +423,154 @@ app.delete("/api/admin/groups/:id", getUser, requireAdmin, async (req, res) => {
     res.json({ success: true });
 });
 
+const AI_SERVICE_URL = (process.env.AI_SERVICE_URL || "http://127.0.0.1:8001").replace(/\\/$/, "");
+const aiJsonHeaders = { "Content-Type": "application/json" };
+
+async function verifyGroupMembership(groupId, userId) {
+    if (!Number.isInteger(groupId) || groupId < 1) return { ok: false, status: 400, message: "A valid group ID is required." };
+    const { data, error } = await supabase.from("group_members")
+        .select("group_id").eq("group_id", groupId).eq("user_id", userId).maybeSingle();
+    if (error) return { ok: false, status: 500, message: "Unable to verify group membership." };
+    if (!data) return { ok: false, status: 403, message: "You must be a member of this group to use its AI tools." };
+    return { ok: true };
+}
+
+async function callAIService(path, options = {}) {
+    let response;
+    try {
+        response = await fetch(`${AI_SERVICE_URL}${path}`, {
+            ...options,
+            signal: AbortSignal.timeout(190000),
+        });
+    } catch {
+        const error = new Error("The AI service is unavailable. Start the local AI service and try again.");
+        error.status = 503;
+        throw error;
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const message = payload.detail || payload.message || "AI request failed.";
+        const error = new Error(String(message));
+        error.status = response.status >= 500 ? 503 : response.status;
+        throw error;
+    }
+    return payload;
+}
+
+app.get("/api/ai/health", async (_req, res) => {
+    try {
+        const result = await callAIService("/health", { method: "GET" });
+        res.json(result);
+    } catch (error) {
+        res.status(error.status || 503).json({ success: false, message: error.message });
+    }
+});
+
+// The browser sends the original file bytes as application/octet-stream.
+// Keep file parsing and model calls behind this API instead of exposing Ollama.
+app.post("/api/ai/groups/:groupId/analyze-member", getUser, requireStudent,
+    express.raw({ type: "application/octet-stream", limit: "10mb" }),
+    async (req, res) => {
+        const groupId = Number(req.params.groupId);
+        const membership = await verifyGroupMembership(groupId, Number(req.user.user_id));
+        if (!membership.ok) return res.status(membership.status).json({ success: false, message: membership.message });
+
+        const filename = String(req.query.filename || "upload.txt").split(/[\\/]/).pop();
+        if (!/\\.(pdf|docx|txt)$/i.test(filename)) {
+            return res.status(400).json({ success: false, message: "Upload a PDF, DOCX, or TXT file." });
+        }
+        if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+            return res.status(400).json({ success: false, message: "No file bytes received. Send the file as application/octet-stream." });
+        }
+        if (req.body.length > 10 * 1024 * 1024) {
+            return res.status(413).json({ success: false, message: "File exceeds the 10 MB limit." });
+        }
+
+        try {
+            const form = new FormData();
+            form.append("file", new Blob([req.body]), filename);
+            const analyzed = await callAIService("/analyze-member", { method: "POST", body: form });
+            const profile = analyzed.member_profile;
+            const { error } = await supabase.from("ai_member_profiles").upsert({
+                group_id: groupId,
+                user_id: req.user.user_id,
+                profile_json: profile,
+                source_filename: filename,
+                updated_at: new Date().toISOString(),
+            }, { onConflict: "group_id,user_id" });
+            if (error) {
+                console.error("AI profile save error:", error.message);
+                return res.status(500).json({ success: false, message: "Profile was analyzed but could not be saved. Run server/ai-schema.sql in Supabase." });
+            }
+            res.json({ success: true, filename, member_profile: profile });
+        } catch (error) {
+            res.status(error.status || 500).json({ success: false, message: error.message || "Document analysis failed." });
+        }
+    }
+);
+
+app.get("/api/ai/groups/:groupId/profiles", getUser, requireStudent, async (req, res) => {
+    const groupId = Number(req.params.groupId);
+    const membership = await verifyGroupMembership(groupId, Number(req.user.user_id));
+    if (!membership.ok) return res.status(membership.status).json({ success: false, message: membership.message });
+    const { data, error } = await supabase.from("ai_member_profiles")
+        .select("user_id,profile_json,source_filename,updated_at")
+        .eq("group_id", groupId).order("updated_at", { ascending: true });
+    if (error) return res.status(500).json({ success: false, message: "Unable to load member profiles. Run server/ai-schema.sql if the AI tables are missing." });
+    res.json({ profiles: data.map(row => ({
+        user_id: Number(row.user_id), profile: row.profile_json,
+        source_filename: row.source_filename, updated_at: row.updated_at,
+    })) });
+});
+
+app.post("/api/ai/groups/:groupId/generate-titles", getUser, requireStudent, async (req, res) => {
+    const groupId = Number(req.params.groupId);
+    const membership = await verifyGroupMembership(groupId, Number(req.user.user_id));
+    if (!membership.ok) return res.status(membership.status).json({ success: false, message: membership.message });
+    const { data, error } = await supabase.from("ai_member_profiles")
+        .select("user_id,profile_json").eq("group_id", groupId);
+    if (error) return res.status(500).json({ success: false, message: "Unable to load member profiles." });
+    if (!data || data.length === 0) return res.status(400).json({ success: false, message: "Upload and analyze at least one member document first." });
+    try {
+        const result = await callAIService("/generate-titles", {
+            method: "POST",
+            headers: aiJsonHeaders,
+            body: JSON.stringify({ member_profiles: data.map(row => ({ user_id: Number(row.user_id), ...row.profile_json })) }),
+        });
+        res.json(result);
+    } catch (error) {
+        res.status(error.status || 500).json({ success: false, message: error.message || "Title generation failed." });
+    }
+});
+
+app.post("/api/ai/groups/:groupId/select-title", getUser, requireStudent, async (req, res) => {
+    const groupId = Number(req.params.groupId);
+    const membership = await verifyGroupMembership(groupId, Number(req.user.user_id));
+    if (!membership.ok) return res.status(membership.status).json({ success: false, message: membership.message });
+    const title = req.body?.title;
+    if (!title || typeof title.title !== "string" || !title.title.trim() || title.title.length > 300) {
+        return res.status(400).json({ success: false, message: "Provide a valid title object returned by title generation." });
+    }
+    const { error } = await supabase.from("ai_capstone_projects").upsert({
+        group_id: groupId,
+        selected_title: title.title.trim(),
+        title_details: title,
+        created_by: req.user.user_id,
+        updated_at: new Date().toISOString(),
+    }, { onConflict: "group_id" });
+    if (error) return res.status(500).json({ success: false, message: "Unable to save selected title. Run server/ai-schema.sql in Supabase." });
+    res.json({ success: true, selected_title: title });
+});
+
+app.get("/api/ai/groups/:groupId/selected-title", getUser, requireStudent, async (req, res) => {
+    const groupId = Number(req.params.groupId);
+    const membership = await verifyGroupMembership(groupId, Number(req.user.user_id));
+    if (!membership.ok) return res.status(membership.status).json({ success: false, message: membership.message });
+    const { data, error } = await supabase.from("ai_capstone_projects")
+        .select("selected_title,title_details,created_at,updated_at")
+        .eq("group_id", groupId).maybeSingle();
+    if (error) return res.status(500).json({ success: false, message: "Unable to load selected title." });
+    res.json({ selected_title: data ? { ...data.title_details, title: data.selected_title, created_at: data.created_at, updated_at: data.updated_at } : null });
+});
+
 module.exports = app;
