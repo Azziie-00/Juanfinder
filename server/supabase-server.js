@@ -423,7 +423,7 @@ app.delete("/api/admin/groups/:id", getUser, requireAdmin, async (req, res) => {
     res.json({ success: true });
 });
 
-const AI_SERVICE_URL = (process.env.AI_SERVICE_URL || "http://127.0.0.1:8001").replace(/\\/$/, "");
+const AI_SERVICE_URL = (process.env.AI_SERVICE_URL || "http://127.0.0.1:8001").replace(/\/$/, "");
 const aiJsonHeaders = { "Content-Type": "application/json" };
 
 async function verifyGroupMembership(groupId, userId) {
