@@ -3,25 +3,47 @@ import { useNavigate } from 'react-router-dom';
 import { Row, Col, InputGroup, Form, Spinner } from 'react-bootstrap';
 import Layout from '../components/Layout';
 import Calendar from '../components/Calendar';
+import type { AuthUser, GroupData } from "../data/datas";
 import { useAuth } from '../context/useAuth';
 import { API_BASE_URL } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
 import { ADVISER, SEED_GROUPS, AI_CONFIG, ADVISERS } from '../data/datas';
-import type { GroupData } from '../data/datas';
 import '../styles/dashboard.css';
 
 
 interface ChatMessage { role: 'ai' | 'user'; text: string; }
 interface AIMessage   { role: 'user' | 'assistant'; content: string; }
 
-async function callAI(systemPrompt: string, messages: AIMessage[]): Promise<string> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: AI_CONFIG.model, max_tokens: AI_CONFIG.maxTokens, system: systemPrompt, messages }),
+async function callAI(
+  systemPrompt: string,
+  messages: AIMessage[],
+  user: AuthUser | null,
+  viewRole: AuthUser["role"] | null,
+): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}/ai/chat`, {
+    method: "POST",
+    headers: authHeaders(user, viewRole, {
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify({
+      systemPrompt,
+      messages,
+    }),
   });
-  const data = await res.json();
-  return (data.content as Array<{ text?: string }> || []).map(i => i.text || '').join('');
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data.message || data.detail || `AI request failed (${response.status})`,
+    );
+  }
+
+  if (typeof data.reply !== "string" || !data.reply.trim()) {
+    throw new Error("The AI returned an empty reply.");
+  }
+
+  return data.reply;
 }
 
 export default function Dashboard() {
@@ -58,7 +80,7 @@ export default function Dashboard() {
     setAiLoading(true);
     const newHist: AIMessage[] = [...chatHistory, { role:'user', content:text }];
     try {
-      const reply = await callAI(AI_CONFIG.systemPrompt, newHist);
+      const reply = await callAI(AI_CONFIG.systemPrompt, newHist, user, viewRole,);
       setChatHistory([...newHist, { role:'assistant', content:reply }]);
       addBubble(reply, 'ai');
     } catch { addBubble('Connection issue. Try again.', 'ai'); }
@@ -69,7 +91,7 @@ export default function Dashboard() {
     setTitles([]); setTitlesGroup(groupName);
     try {
       const prompt = AI_CONFIG.titlePromptTemplate.replace('{groupName}', groupName);
-      const raw    = await callAI(prompt, [{ role:'user', content:'Give 3 titles.' }]);
+      const raw = await callAI(prompt, [{ role: 'user', content: 'Give 3 titles.' }], user, viewRole);
       setTitles(JSON.parse(raw.replace(/```json|```/g, '').trim()) as string[]);
     } catch { setTitles(['Could not load titles. Try again.']); }
   };
@@ -81,7 +103,7 @@ export default function Dashboard() {
     setAiLoading(true);
     const newHist: AIMessage[] = [...chatHistory, { role:'user', content:`Student joined "${group.name}". Welcome them warmly in under 50 words.` }];
     try {
-      const reply = await callAI(AI_CONFIG.systemPrompt, newHist);
+      const reply = await callAI(AI_CONFIG.systemPrompt, newHist, user, viewRole,);
       setChatHistory([...newHist, { role:'assistant', content:reply }]);
       addBubble(reply, 'ai');
     } catch { addBubble('Welcome to the group!', 'ai'); }
