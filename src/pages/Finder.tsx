@@ -31,7 +31,6 @@ interface CreateForm { name: string; course: string; specialty: string; max: str
 export default function Finder() {
   const { user, viewRole, effectiveRole }  = useAuth();
   const [filter, setFilter]       = useState<FilterType>('ALL');
-  const [courseFilter, setCourseFilter] = useState<string>(() => user?.course || 'ALL');
   const [page, setPage]           = useState(1);
   const [groups, setGroups]       = useState<GroupData[]>([]);
   const [students, setStudents]   = useState<StudentData[]>([]);
@@ -60,12 +59,13 @@ export default function Finder() {
       try {
         const response = await fetch(`${API}/groups`, { headers: authHeaders(user, viewRole) });
         if (!response.ok) throw new Error('Unable to load groups.');
-        const records = await response.json() as { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; OwnerID: number; Status: string; MaxMembers: number; MemberCount: number; MemberNames?: string; IsMember: number; IsPending: number }[];
+        const records = await response.json() as { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; OwnerID: number; Status: string; FinalizedAt?: string | null; MaxMembers: number; MemberCount: number; MemberNames?: string; IsMember: number; IsPending: number }[];
         setHasGroup(records.some((record) => record.IsMember === 1 || record.IsPending === 1));
         setGroups(records.map((record) => ({
           id: String(record.GroupID), name: record.GroupName, course: record.Course,
           specialty: record.Specialty, desc: record.Description, ownerId: record.OwnerID,
           members: record.MemberCount, maxMembers: record.MaxMembers, status: record.Status,
+          finalizedAt: record.FinalizedAt,
           memberNames: record.MemberNames ? record.MemberNames.split('|') : [],
           _joined: record.IsMember === 1 || record.IsPending === 1,
           availability: `${Math.max(0, record.MaxMembers - record.MemberCount)} / ${record.MaxMembers}`,
@@ -97,20 +97,17 @@ export default function Finder() {
   }, [user, viewRole]);
 
   // ── Data ──
-  const COURSES = Array.from(new Set([...groups.map(g => g.course), ...students.map(student => student.course)].filter(Boolean))).sort();
-
   const getRows = (): RowItem[] => {
     let list: RowItem[];
     if (filter === 'STUDENT') list = students.map(student => ({ ...student, _type:'student' as const }));
     else list = groups.map(g => ({ ...g, _type:'group' as const }));
-    if (courseFilter !== 'ALL') list = list.filter(r => r.course === courseFilter);
     return list;
   };
   const rows  = getRows();
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const slice = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const visibleStudentCounts = students.reduce<Record<string, number>>((counts, student) => {
-    if (courseFilter === 'ALL' || student.course === courseFilter) counts[student.course] = (counts[student.course] || 0) + 1;
+    counts[student.course] = (counts[student.course] || 0) + 1;
     return counts;
   }, {});
 
@@ -136,16 +133,14 @@ export default function Finder() {
     setGroups(gs => gs.map(gr => gr.id === g.id
       ? { ...gr, _joined: true }
       : gr));
-    const names = g.memberNames?.length ? g.memberNames : [g.name];
     const myG = {
       id: g.id, name: g.name, desc: g.desc, specialty: g.specialty,
       maxMembers: g.maxMembers,
       skills: g.specialty?.split('/').map(s => s.trim()) ?? [selectedRole ?? 'Developer'],
       pending: [{ id: g.id, name: user.name, course: g.course, userId: Number(user.id) }],
-      members: [
-        ...names.map((n, i) => ({ name: n, role: (i === 0 ? 'owner' : 'member') as 'owner' | 'member' })),
-        { name: user?.name ?? 'You', role: 'member' as const },
-      ],
+      members: (g.memberNames || []).map((memberName, index) => ({ name: memberName, role: (index === 0 ? 'owner' : 'member') as 'owner' | 'member' })),
+      ownerId: g.ownerId,
+      status: g.status,
     };
     setHasGroup(true);
     sessionStorage.setItem('jf_mygroup', JSON.stringify(myG));
@@ -163,7 +158,7 @@ export default function Finder() {
     }
     setFormError('');
     if (!form.name)      { setFormError('Please enter a Group Name.'); return; }
-    if (!form.course)    { setFormError('Please select a Course.'); return; }
+    if (!form.course)    { setFormError('Your account needs a course assigned before you create a group.'); return; }
     if (!form.specialty) { setFormError('Please enter a Specialty / Focus.'); return; }
     const max = parseInt(form.max);
     const response = await fetch(`${API}/groups`, {
@@ -171,7 +166,7 @@ export default function Finder() {
       headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({ name: form.name, course: form.course, specialty: form.specialty, maxMembers: max, description: form.desc }),
     });
-    const data = await response.json() as { success?: boolean; message?: string; group?: { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; OwnerID: number; Status: string; MaxMembers: number; MemberCount: number } };
+    const data = await response.json() as { success?: boolean; message?: string; group?: { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; OwnerID: number; Status: string; FinalizedAt: string | null; MaxMembers: number; MemberCount: number } };
     if (!response.ok || !data.group) { setFormError(data.message || 'Unable to create group.'); return; }
     const created = data.group;
     const newG: GroupData = {
@@ -188,6 +183,7 @@ export default function Finder() {
       id: newG.id, name: newG.name, desc: newG.desc, specialty: newG.specialty,
       maxMembers: max, skills: form.specialty.split('/').map(s => s.trim()),
       pending: [], members: [{ name: user?.name ?? 'You', role: 'owner' }],
+      ownerId: Number(user.id), status: created.Status, finalizedAt: created.FinalizedAt || null,
     }));
     setCreateDone(true);
   };
@@ -219,21 +215,6 @@ export default function Finder() {
                   <button className={`dropdown-item finder-dropdown-item${filter===f?' active':''}`}
                     onClick={() => { setFilter(f); setPage(1); }}>
                     {f}
-                  </button>
-                </li>
-              ))}
-            </Dropdown.Menu>
-          </Dropdown>
-          <Dropdown>
-            <Dropdown.Toggle as="button" className="filter-dropdown-btn">
-              Course: <strong>{courseFilter}</strong>
-            </Dropdown.Toggle>
-            <Dropdown.Menu as="ul" className="finder-dropdown-menu">
-              {(['ALL', ...COURSES]).map(c => (
-                <li key={c}>
-                  <button className={`dropdown-item finder-dropdown-item${courseFilter===c?' active':''}`}
-                    onClick={() => { setCourseFilter(c); setPage(1); }}>
-                    {c}
                   </button>
                 </li>
               ))}
@@ -366,8 +347,8 @@ export default function Finder() {
                     </div>
                   </div>
                   <div className="gd-actions">
-                    {g._joined || slots <= 0
-                      ? <button className="gd-btn joined"><i className="ti ti-clock me-1"></i>{g._joined ? 'Pending Approval' : 'Group Full'}</button>
+                    {g._joined || slots <= 0 || g.finalizedAt
+                      ? <button className="gd-btn joined" disabled><i className="ti ti-clock me-1"></i>{g.finalizedAt ? 'Finalized' : g._joined ? 'Pending Approval' : 'Group Full'}</button>
                       : <button className="gd-btn join" onClick={() => openRoleModal(g)}><i className="ti ti-circle-check me-1"></i>VIEW GROUP / JOIN</button>
                     }
                     <button className="gd-btn back" onClick={() => setDetailGroup(null)}><i className="ti ti-arrow-left me-1"></i>BACK</button>
@@ -472,7 +453,7 @@ export default function Finder() {
                 <Form.Group>
                   <Form.Label className="jf-label">Course</Form.Label>
                   <Form.Select className="jf-input" value={form.course} onChange={e => setForm(fm => ({ ...fm, course: e.target.value }))}>
-                    <option value="">Select course…</option>
+                    <option value="">Select Course…</option>
                     {['BSIT','BSCS','BSEMC','BSIS'].map(c => <option key={c}>{c}</option>)}
                   </Form.Select>
                 </Form.Group>

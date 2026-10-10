@@ -45,6 +45,9 @@
 .profile-info-label { width: 110px; flex-shrink: 0; font-weight: 700; color: var(--navy); }
 .profile-info-colon { width: 14px; flex-shrink: 0; color: var(--navy); }
 .profile-info-value { color: rgba(26,42,74,.8); word-break: break-word; }
+.adviser-requirement-row { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: start; gap: 10px; }
+.adviser-requirement-number { color: var(--navy); font-weight: 800; text-align: right; }
+.adviser-requirement-text { min-width: 0; }
 
 .profile-lower-row { display: flex; gap: 14px; flex: 1; }
 

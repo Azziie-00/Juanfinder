@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { getInitials, NOTIFICATIONS } from '../data/datas';
+import { API_BASE_URL } from '../data/api';
+import { authHeaders } from '../context/authContext.instance';
 
 const STUDENT_NAV_LINKS = [
   { to:'/',        icon:'ti-layout-dashboard', label:'Dashboard' },
@@ -13,10 +15,8 @@ const STUDENT_NAV_LINKS = [
 
 const ADVISER_NAV_LINKS = [
   { to:'/',         icon:'ti-home',        label:'Dashboard'    },
-  { to:'/adviser',  icon:'ti-user-circle', label:'Adviser Profile' },
-  { to:'/advisee',  icon:'ti-users',       label:'Advisee'      },
   { to:'/group',    icon:'ti-settings',    label:'Group'        },
-  { to:'/students', icon:'ti-list-details',label:'Student List' },
+  { to:'/students', icon:'ti-list-details',label:'Student Members' },
 ];
 
 const ADMIN_NAV_LINKS = [
@@ -25,7 +25,7 @@ const ADMIN_NAV_LINKS = [
 
 const ROLE_LABEL: Record<string, string> = { student:'Student', adviser:'Adviser', admin:'Admin', superadmin:'Super Admin' };
 
-export default function Layout({ children }: { children: ReactNode }) {
+export default function Layout({ children, hideSidebar = false }: { children: ReactNode; hideSidebar?: boolean }) {
   const { user, viewRole, effectiveRole, switchViewRole, logout } = useAuth();
   const navigate = useNavigate();
   const [hasMyGroup, setHasMyGroup] = useState(() => Boolean(sessionStorage.getItem('jf_mygroup')));
@@ -44,6 +44,26 @@ export default function Layout({ children }: { children: ReactNode }) {
     navigate('/');
   };
 
+  const signOut = () => {
+    const finishLogout = () => {
+      logout();
+      navigate('/login');
+    };
+    if (!user?.sessionToken) {
+      finishLogout();
+      return;
+    }
+    void fetch(`${API_BASE_URL}/logout`, { method: 'POST', headers: authHeaders(user, viewRole) })
+      .then(async response => {
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          console.error('Server logout failed:', data.message || response.statusText);
+        }
+      })
+      .catch(error => console.error('Server logout failed:', error))
+      .finally(finishLogout);
+  };
+
   useEffect(() => {
     const h = (e: MouseEvent) => {
       if (ddRef.current && !ddRef.current.contains(e.target as Node)) setDdOpen(false);
@@ -60,8 +80,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="app">
-      <aside className="sidebar">
+    <div className={`app${hideSidebar ? ' app-fullscreen' : ''}`}>
+      {!hideSidebar && <aside className="sidebar">
         <div className="logo">
           <div className="logo-system">STI Education System</div>
           <div className="logo-brand">JuanFinder</div>
@@ -76,7 +96,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <div className="sidebar-footer">
           <span className="nav-item"><i className="ti ti-help-circle"></i> Help</span>
         </div>
-      </aside>
+      </aside>}
 
       <div className="main">
         <header className="topbar d-flex align-items-center justify-content-between">
@@ -146,7 +166,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                   <div className="user-dd-item" onClick={() => { setDdOpen(false); navigate('/profile'); }}><i className="ti ti-user"></i> My Profile</div>
                   <div className="user-dd-item"><i className="ti ti-settings"></i> Settings</div>
                   <div className="user-dd-divider"></div>
-                  <div className="user-dd-item logout" onClick={() => { logout(); navigate('/login'); }}>
+                  <div className="user-dd-item logout" onClick={signOut}>
                     <i className="ti ti-logout"></i> Log Out
                   </div>
                 </div>

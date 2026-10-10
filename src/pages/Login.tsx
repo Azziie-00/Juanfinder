@@ -77,12 +77,6 @@ export default function Login() {
     setPw('');
   };
 
-  const loginLocally = () => {
-    login({ name: id, id, role });
-    setLoading(false);
-    navigate('/');
-  };
-
   const submit = async () => {
     if (!id || !pw) {
       setError('Please fill in both fields.');
@@ -108,10 +102,6 @@ export default function Login() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        if (import.meta.env.DEV && response.status >= 500) {
-          loginLocally();
-          return;
-        }
         setError(data.message || 'Invalid credentials. Please try again.');
         setLoading(false);
         return;
@@ -122,19 +112,16 @@ export default function Login() {
         id: data.user.id || data.user.username,
         role: data.user.role as Role,
         course: data.user.course,
+        sessionToken: data.user.sessionToken,
+        passwordChangeRequired: Boolean(data.user.passwordChangeRequired),
       };
 
       login(userData);
       setLoading(false);
-      navigate('/');
+      navigate(userData.passwordChangeRequired ? '/change-password' : '/');
     } catch (error) {
-      if (import.meta.env.DEV) {
-        console.warn('Login server unavailable; using a local demo session.', error);
-        loginLocally();
-      } else {
-        setError('Cannot connect to the server. Please try again later.');
-        setLoading(false);
-      }
+      setError(error instanceof Error ? error.message : 'Cannot connect to the server. Please try again later.');
+      setLoading(false);
     }
   };
 
