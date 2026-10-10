@@ -118,3 +118,46 @@ Profiles:
         raise AIServiceError("The AI did not produce usable title candidates. Please retry.")
     result["titles"] = titles[:3]
     return result
+
+
+def chat_reply(system_prompt: str, messages: list[dict]) -> str:
+    """Return a conversational reply from the configured Ollama model."""
+    safe_messages = []
+    for item in messages[-12:]:
+        role = item.get("role")
+        content = item.get("content")
+        if role not in {"user", "assistant"}:
+            continue
+        if not isinstance(content, str) or not content.strip():
+            continue
+        safe_messages.append({
+            "role": role,
+            "content": content[:4000],
+        })
+
+    if not safe_messages:
+        raise AIServiceError("Please send a message.")
+
+    try:
+        response = requests.post(
+            f"{OLLAMA_URL}/api/chat",
+            json={
+                "model": OLLAMA_MODEL,
+                "stream": False,
+                "messages": [
+                    {"role": "system", "content": system_prompt[:8000]},
+                    *safe_messages,
+                ],
+                "options": {"temperature": 0.4, "num_ctx": 4096},
+            },
+            timeout=TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        reply = response.json().get("message", {}).get("content", "").strip()
+        if not reply:
+            raise AIServiceError("The AI returned an empty reply.")
+        return reply
+    except requests.RequestException as exc:
+        raise AIServiceError(
+            "Cannot reach Ollama. Check that Ollama is running and the configured model is installed."
+        ) from exc
