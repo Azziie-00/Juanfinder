@@ -7,7 +7,7 @@ import type { AuthUser, GroupData } from "../data/datas";
 import { useAuth } from '../context/useAuth';
 import { API_BASE_URL } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
-import { ADVISER, SEED_GROUPS, AI_CONFIG, ADVISERS } from '../data/datas';
+import { ADVISER, AI_CONFIG, ADVISERS } from '../data/datas';
 import '../styles/dashboard.css';
 
 
