@@ -424,6 +424,7 @@ app.delete("/api/admin/groups/:id", getUser, requireAdmin, async (req, res) => {
 });
 
 const AI_SERVICE_URL = (process.env.AI_SERVICE_URL || "http://127.0.0.1:8001").replace(/\/$/, "");
+const AI_SERVICE_TOKEN = process.env.AI_SERVICE_TOKEN || "";
 const aiJsonHeaders = { "Content-Type": "application/json" };
 
 async function verifyGroupMembership(groupId, userId) {
@@ -437,16 +438,33 @@ async function verifyGroupMembership(groupId, userId) {
 
 async function callAIService(path, options = {}) {
     let response;
+    if (path !== "/health" && !AI_SERVICE_TOKEN) {
+    const error = new Error(
+        "AI_SERVICE_TOKEN is not configured on the backend."
+    );
+    error.status = 503;
+    throw error;
+}
+
     try {
+        const headers = {
+    ...(options.headers || {}),
+    ...(AI_SERVICE_TOKEN
+        ? { "x-ai-service-token": AI_SERVICE_TOKEN }
+        : {}),
+        };
         response = await fetch(`${AI_SERVICE_URL}${path}`, {
             ...options,
+            headers,
             signal: AbortSignal.timeout(190000),
         });
+
     } catch {
         const error = new Error("The AI service is unavailable. Start the local AI service and try again.");
         error.status = 503;
         throw error;
     }
+    
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
         const message = payload.detail || payload.message || "AI request failed.";
