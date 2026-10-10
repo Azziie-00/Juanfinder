@@ -1,11 +1,33 @@
 import os
+import secrets
 from pathlib import Path
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import (Depends, FastAPI, File, Header, HTTPException, UploadFile)
 from pydantic import BaseModel, Field
 from document_parser import extract_document
 from ai_service import AIServiceError, analyze_member, generate_titles
 
 app = FastAPI(title="JuanFinder AI Service", version="0.1.0")
+AI_SERVICE_TOKEN = os.getenv("AI_SERVICE_TOKEN", "").strip()
+def require_ai_service_token(
+    x_ai_service_token: str | None = Header(default=None),
+):
+    if not AI_SERVICE_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="AI service token is not configured.",
+        )
+
+    if (
+        not x_ai_service_token
+        or not secrets.compare_digest(
+            x_ai_service_token,
+            AI_SERVICE_TOKEN,
+        )
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized.",
+        )
 MAX_FILE_BYTES = 10 * 1024 * 1024
 
 class TitleRequest(BaseModel):
@@ -15,7 +37,7 @@ class TitleRequest(BaseModel):
 def health():
     return {"status": "ok", "model": os.getenv("OLLAMA_MODEL", "llama3.2:1b")}
 
-@app.post("/analyze-member")
+@app.post("/analyze-member", dependencies=[Depends(require_ai_service_token)])
 async def analyze_member_endpoint(file: UploadFile = File(...)):
     filename = Path(file.filename or "upload.txt").name
     content = await file.read(MAX_FILE_BYTES + 1)
@@ -32,7 +54,7 @@ async def analyze_member_endpoint(file: UploadFile = File(...)):
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Document analysis failed.") from exc
 
-@app.post("/generate-titles")
+@app.post("/generate-titles", dependencies=[Depends(require_ai_service_token)])
 def generate_titles_endpoint(request: TitleRequest):
     try:
         return generate_titles(request.member_profiles)
