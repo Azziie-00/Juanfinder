@@ -1018,6 +1018,45 @@ app.get("/api/ai/health", async (_req, res) => {
     }
 });
 
+app.post("/api/ai/chat", getUser, async (req, res) => {
+    const systemPrompt = req.body?.systemPrompt;
+    const messages = req.body?.messages;
+    if (typeof systemPrompt !== "string" || !systemPrompt.trim() || systemPrompt.length > 8000) {
+        return res.status(400).json({ success: false, message: "A valid AI system prompt is required." });
+    }
+    if (!Array.isArray(messages) || messages.length < 1 || messages.length > 12) {
+        return res.status(400).json({ success: false, message: "Send between 1 and 12 chat messages." });
+    }
+    const validMessages = messages.every(message =>
+        message &&
+        ["user", "assistant"].includes(message.role) &&
+        typeof message.content === "string" &&
+        message.content.trim().length > 0 &&
+        message.content.length <= 4000
+    );
+    if (!validMessages) {
+        return res.status(400).json({ success: false, message: "One or more chat messages are invalid." });
+    }
+
+    try {
+        const result = await callAIService("/chat", {
+            method: "POST",
+            headers: aiJsonHeaders,
+            body: JSON.stringify({
+                system_prompt: systemPrompt,
+                messages,
+            }),
+        });
+        res.json(result);
+    } catch (error) {
+        console.error("AI chat error:", error.message);
+        res.status(error.status || 503).json({
+            success: false,
+            message: error.message || "The AI assistant is unavailable.",
+        });
+    }
+});
+
 // The browser sends the original file bytes as application/octet-stream.
 // Keep file parsing and model calls behind this API instead of exposing Ollama.
 app.post("/api/ai/groups/:groupId/analyze-member", getUser, requireStudent,
