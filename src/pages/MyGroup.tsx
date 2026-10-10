@@ -7,6 +7,7 @@ import { authHeaders } from '../context/authContext.instance';
 import { getInitials } from '../data/datas';
 import type { MyGroupData, GroupMember, PendingRequest } from '../data/datas';
 import '../styles/mygroup.css';
+import CapstoneAI from '../components/CapstoneAI';
 
 const API = API_BASE_URL;
 
@@ -168,6 +169,7 @@ export default function MyGroup() {
           </div>
 
         </div>
+        {membershipStatus === 'Member' && <CapstoneAI groupId={group.id} />}
       </div>
 
       {/*Edit Modal*/}
