@@ -124,7 +124,7 @@ export default function Dashboard() {
       setCvError('Sign in before uploading a CV.');
       return;
     }
-    if (!/\\.(pdf|docx|txt)$/i.test(file.name)) {
+    if (!/\.(pdf|docx|txt)$/i.test(file.name)) {
       setCvError('Choose a PDF, DOCX, or TXT file.');
       return;
     }
