@@ -1,6 +1,6 @@
 # JuanFinder AI service (local development)
 
-This service extracts text from student documents and calls Ollama for profile extraction and capstone-title generation. The Express API proxies requests and verifies that the signed-in user belongs to the target group before uploading or generating titles.
+This service extracts text from student CVs and documents and calls Ollama for profile extraction and capstone-title generation. CV analysis is course-aware for BSIT, BSCS, BS Tourism Management, BSCpE, BSBA, BSAIS, BSHM, and BACOMM. Express supplies the signed-in student's registered course from the Supabase user record. The API proxies requests and protects AI service calls with the shared server-side token.
 
 ## 1. Install prerequisites (Windows)
 
@@ -47,3 +47,10 @@ Allowed formats are PDF, DOCX, and TXT, up to 10 MB and 30 PDF pages. Scanned PD
 This is a local-development setup. Ollama and this service must not be exposed directly to the public internet. A Vercel-hosted Express function cannot reach Ollama on your personal computer unless the AI service is deployed on a securely reachable machine with authentication and TLS. Do not deploy this configuration unchanged.
 
 The existing application authenticates API requests using the `x-user-id` header. That is not secure authentication for a public deployment by itself. Before production, replace it with verified Supabase Auth access tokens and enforce membership checks server-side. Keep `SUPABASE_SERVICE_ROLE_KEY` server-only.
+
+
+## Course-aware CV analysis
+
+The authenticated CV upload endpoint passes the signed-in student's registered course from the Supabase user record to FastAPI as a multipart form field. The analyzer extracts general CV skills plus program-relevant skills and a brief program relevance summary. It supports BSIT, BSCS, BS Tourism Management, BSCpE, BSBA, BSAIS, BSHM, and BACOMM. Unknown course values use a cross-disciplinary fallback rather than forcing an IT-only response.
+
+The Dashboard displays the student's registered program, extracted skills, tools, interests, and program relevance in JUAN-AI, then automatically requests one title suited to that course. The uploaded CV and extracted profile used by this Dashboard chat remain in browser state; this feature does not persist them to Supabase. Students should avoid uploading unnecessary sensitive personal information.
