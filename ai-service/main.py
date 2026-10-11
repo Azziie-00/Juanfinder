@@ -1,7 +1,7 @@
 import os
 import secrets
 from pathlib import Path
-from fastapi import (Depends, FastAPI, File, Header, HTTPException, UploadFile)
+from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException, UploadFile)
 from pydantic import BaseModel, Field
 from document_parser import extract_document
 from ai_service import AIServiceError, analyze_member, chat_reply, generate_titles
@@ -46,14 +46,17 @@ def health():
     return {"status": "ok", "model": os.getenv("OLLAMA_MODEL", "llama3.2:1b")}
 
 @app.post("/analyze-member", dependencies=[Depends(require_ai_service_token)])
-async def analyze_member_endpoint(file: UploadFile = File(...)):
+async def analyze_member_endpoint(
+    file: UploadFile = File(...),
+    course: str = Form(default="Unspecified"),
+):
     filename = Path(file.filename or "upload.txt").name
     content = await file.read(MAX_FILE_BYTES + 1)
     if len(content) > MAX_FILE_BYTES:
         raise HTTPException(status_code=413, detail="File exceeds the 10 MB limit.")
     try:
         text = extract_document(filename, content)
-        profile = analyze_member(text)
+        profile = analyze_member(text, course=course)
         return {"member_profile": profile, "filename": filename}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
