@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException, UploadFile)
 from pydantic import BaseModel, Field
 from document_parser import extract_document
-from ai_service import AIServiceError, analyze_member, chat_reply, generate_titles
+from ai_service import AIServiceError, analyze_member, chat_reply, generate_cv_titles, generate_titles
 
 app = FastAPI(title="JuanFinder AI Service", version="0.1.0")
 AI_SERVICE_TOKEN = os.getenv("AI_SERVICE_TOKEN", "").strip()
@@ -36,6 +36,10 @@ class TitleRequest(BaseModel):
 class ChatMessage(BaseModel):
     role: str
     content: str = Field(min_length=1, max_length=4000)
+
+class CVTitleRequest(BaseModel):
+    course: str = Field(default="Unspecified", max_length=128)
+    member_profile: dict
 
 class ChatRequest(BaseModel):
     system_prompt: str = Field(min_length=1, max_length=8000)
@@ -71,6 +75,14 @@ def generate_titles_endpoint(request: TitleRequest):
         return generate_titles(request.member_profiles)
     except AIServiceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+@app.post("/generate-cv-titles", dependencies=[Depends(require_ai_service_token)])
+def generate_cv_titles_endpoint(request: CVTitleRequest):
+    try:
+        return generate_cv_titles(request.member_profile, course=request.course)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
 
 @app.post("/chat", dependencies=[Depends(require_ai_service_token)])
 def chat_endpoint(request: ChatRequest):
