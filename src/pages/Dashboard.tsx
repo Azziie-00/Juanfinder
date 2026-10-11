@@ -19,11 +19,11 @@ function formatAIMessage(message: string): string {
   let formatted = message.trim();
   // Convert headings / markdown labels into separate, visible bullet lines.
   formatted = formatted.replace(
-    new RegExp(String.raw\`\\s*•?\\s*(?:\\*\\*)?(\${labels}):(?:\\*\\*)?\\s*\`, 'gi'),
-    (_match, label: string) => \`\\n• \${label}: \`,
+    new RegExp("\\s*•?\\s*(?:\\*\\*)?(" + labels + "):(?:\\*\\*)?\\s*", "gi"),
+    (_match, label: string) => "\n• " + label + ": ",
   );
-  formatted = formatted.replace(/\\*\\*(.*?)\\*\\*/g, '$1');
-  formatted = formatted.replace(/\\n{3,}/g, '\\n\\n').replace(/^\\n+/, '');
+  formatted = formatted.replace(/\*\*(.*?)\*\*/g, "$1");
+  formatted = formatted.replace(/\n{3,}/g, "\n\n").replace(/^\n+/, "");
   return formatted;
 }
 
