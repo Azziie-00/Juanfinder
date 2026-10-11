@@ -47,7 +47,7 @@ security definer
 set search_path = public
 as $$
 begin
-    if jsonb_typeof(p_titles) <> 'array' or jsonb_array_length(p_titles) <> 3 then
+    if p_titles is null or jsonb_typeof(p_titles) <> 'array' or jsonb_array_length(p_titles) <> 3 then
         return false;
     end if;
 
