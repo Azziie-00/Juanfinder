@@ -239,6 +239,9 @@ Profiles:
 def generate_cv_titles(member_profile: dict, course: str = "Unspecified") -> dict:
     """Generate exactly three course-aware capstone options from one analyzed CV profile."""
     program = normalize_academic_program(course)
+    program_code = program["code"]
+    program_name = program["name"]
+    program_focus = program["focus"]
     # Keep only the analysis fields needed to generate suggestions.
     allowed_fields = (
         "skills", "tools_and_technologies", "project_experience",
@@ -262,9 +265,9 @@ def generate_cv_titles(member_profile: dict, course: str = "Unspecified") -> dic
 Create EXACTLY THREE distinct capstone project candidates for ONE student.
 
 Registered academic program:
-- Code: {program["code"]}
-- Name: {program["name"]}
-- Focus areas: {program["focus"]}
+- Code: {program_code}
+- Name: {program_name}
+- Focus areas: {program_focus}
 
 Course-specific direction:
 - BSIT: web/mobile applications, databases, networking, cybersecurity, information systems.
@@ -288,7 +291,7 @@ Rules:
 
 Return JSON in this exact shape:
 {{
-  "academic_program": "{program["name"]}",
+  "academic_program": "{program_name}",
   "titles": [
     {{
       "title": "A specific project title",
