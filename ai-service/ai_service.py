@@ -109,6 +109,9 @@ def ask_json(system_prompt: str, user_prompt: str) -> dict:
 
 def analyze_member(document_text: str, course: str = "Unspecified") -> dict:
     program = normalize_academic_program(course)
+    program_code = program["code"]
+    program_name = program["name"]
+    program_focus = program["focus"]
     system = (
         "You are a careful academic CV analyzer for a college project-advising website. "
         "Support BSIT, BSCS, BS Tourism Management, BSCpE, BSBA, BSAIS, BSHM, and BACOMM. "
@@ -123,13 +126,13 @@ internship, volunteering, communication, operations, business, tourism, hospital
 hardware, or software experience when present. Do not invent experience or treat a job title as a capstone title.
 
 Registered academic program:
-- Code: {program["code"]}
-- Name: {program["name"]}
-- Relevant focus areas: {program["focus"]}
+- Code: {program_code}
+- Name: {program_name}
+- Relevant focus areas: {program_focus}
 
 Return this JSON shape:
 {{
-  "academic_program": "{program["name"]}",
+  "academic_program": "{program_name}",
   "skills": ["skills explicitly supported by the CV"],
   "tools_and_technologies": ["software, platforms, equipment, tools, or methods found in the CV"],
   "project_experience": ["projects, coursework, work, internship, volunteer, or organization experience"],
