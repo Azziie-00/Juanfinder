@@ -53,7 +53,7 @@ async function callAI(
     }),
     body: JSON.stringify({
       systemPrompt,
-      messages,
+      messages: messages.slice(-12),
     }),
   });
 
@@ -123,7 +123,7 @@ export default function Dashboard() {
       setCvError('Sign in before uploading a CV.');
       return;
     }
-    if (!/\.(pdf|docx|txt)$/i.test(file.name)) {
+    if (!/\\.(pdf|docx|txt)$/i.test(file.name)) {
       setCvError('Choose a PDF, DOCX, or TXT file.');
       return;
     }
@@ -138,6 +138,9 @@ export default function Dashboard() {
 
     setCvBusy(true);
     setCvError('');
+    setNotice('');
+    addBubble(`I'll read ${file.name}, identify the skills and interests described in it, then automatically suggest a beginner-friendly capstone title.`, 'ai');
+
     try {
       const response = await fetch(
         `${API_BASE_URL}/ai/chat/analyze-cv?filename=${encodeURIComponent(file.name)}`,
@@ -162,14 +165,49 @@ export default function Dashboard() {
       if (!data.member_profile) {
         throw new Error('The AI did not return a readable CV profile.');
       }
-      setCvProfile(data.member_profile);
-      setCvFilename(data.filename || file.name);
+
+      const profile = data.member_profile;
+      const filename = data.filename || file.name;
+      setCvProfile(profile);
+      setCvFilename(filename);
+
+      const skills = profile.skills?.slice(0, 6).join(', ') || 'No clear skills were identified';
+      const tools = profile.tools_and_technologies?.slice(0, 5).join(', ') || 'No specific tools were identified';
+      const interests = profile.research_interests?.slice(0, 4).join(', ') || 'No clear research interests were identified';
+      const experience = profile.experience_level || 'unclear';
+
       addBubble(
-        `I've analyzed ${data.filename || file.name}. I'll use the skills and experience from your CV to tailor our conversation. Your file isn't saved to the JuanFinder database by this chat feature.`,
+        `CV review summary — ${filename}\nSkills identified: ${skills}\nTools and technologies: ${tools}\nResearch interests: ${interests}\nEstimated experience level: ${experience}.\n\nThese are extracted highlights, not a judgement of your ability. I'll now use them to suggest a practical title.`,
         'ai',
       );
+
+      const titlePrompt = `You are JUAN-AI, a practical college capstone mentor. Based on the attached student's extracted CV profile, automatically propose exactly ONE beginner-friendly IT/CS capstone title. Prefer realistic web, mobile, or information-system projects. Suggest AI or IoT only when supported by the profile. Do not invent skills or experience. Do not include personal contact details.\n\nReturn a concise, student-friendly answer with these headings:\nCAPSTONE TITLE: [one specific title]\nWHY IT FITS YOUR CV: [a brief rationale summary citing relevant extracted skills/interests]\nPOSSIBLE SOLUTION: [one or two sentences]\nSKILLS TO LEARN: [a short list]\nFEASIBILITY: [High or Medium, with one short reason]\n\nShow a brief, verifiable explanation summary only, not private hidden chain-of-thought. If the CV lacks detail, state your assumption briefly and keep the idea achievable.`;
+      const titleRequest = 'Generate my capstone title now from the CV I just uploaded. Do not ask me to request a title separately.';
+      addBubble('Title generation: matching the skills and interests listed above to a realistic beginner project, then checking that the suggested scope is achievable.', 'ai');
+
+      try {
+        const reply = await callAI(
+          addCVContext(titlePrompt, profile, filename),
+          [...chatHistory, { role: 'user', content: titleRequest }].slice(-12),
+          user,
+          viewRole,
+        );
+        setChatHistory([
+          ...chatHistory,
+          { role: 'user', content: titleRequest },
+          { role: 'assistant', content: reply },
+        ].slice(-12));
+        addBubble(reply, 'ai');
+        setNotice('CV analyzed and a capstone title was generated automatically.');
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'The title request failed.';
+        setCvError(`Your CV was analyzed, but automatic title generation failed: ${reason}`);
+        addBubble(`I analyzed your CV, but I couldn't generate the title this time. ${reason} You can try sending a message again.`, 'ai');
+      }
     } catch (error) {
-      setCvError(error instanceof Error ? error.message : 'CV analysis failed. Please try again.');
+      const reason = error instanceof Error ? error.message : 'CV analysis failed. Please try again.';
+      setCvError(reason);
+      addBubble(`I couldn't analyze that CV: ${reason}`, 'ai');
     } finally {
       setCvBusy(false);
     }
