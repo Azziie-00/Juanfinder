@@ -27,6 +27,31 @@ function formatAIMessage(message: string): string {
   return formatted;
 }
 
+type CVTitleOption = {
+  title: string;
+  reason_for_fit?: string;
+  description?: string;
+  problem?: string;
+  proposed_solution?: string;
+  relevant_member_skills?: string[];
+  skills_to_learn?: string[];
+  intended_users?: string[];
+  feasibility?: string;
+};
+
+function titleOptionToChatMessage(option: CVTitleOption, index: number): string {
+  const fit = option.reason_for_fit || option.description || "This option uses the skills and interests identified in your CV.";
+  const solution = option.proposed_solution || option.description || option.problem || "Details can be refined after reviewing the capstone scope.";
+  const skills = option.skills_to_learn?.length
+    ? option.skills_to_learn.join(", ")
+    : "Review the technical and research requirements with your adviser.";
+  const feasibility = option.feasibility || "medium";
+  const feasibilityReason = feasibility.toLowerCase() === "high"
+    ? "The proposed scope appears manageable for a student capstone."
+    : "Confirm the feature scope, resources, and timeline with your adviser.";
+  return `OPTION ${index + 1}\n• Capstone Title: ${option.title}\n• Why It Fits Your CV: ${fit}\n• Possible Solution: ${solution}\n• Skills to Learn: ${skills}\n• Feasibility: ${feasibility} — ${feasibilityReason}`;
+}
+
 type CVProfile = {
   academic_program?: string;
   program_relevant_skills?: string[];
@@ -108,6 +133,8 @@ export default function Dashboard() {
   const [cvBusy, setCvBusy] = useState(false);
   const [cvError, setCvError] = useState('');
   const [cvNotice, setCvNotice] = useState('');
+  const [aiDisabled, setAiDisabled] = useState(false);
+  const [savedTitles, setSavedTitles] = useState<CVTitleOption[]>([]);
   const cvInputRef = useRef<HTMLInputElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
@@ -133,12 +160,55 @@ export default function Dashboard() {
       });
   }, [user, viewRole]);
 
+  useEffect(() => {
+    if (!user) {
+      setAiDisabled(false);
+      setSavedTitles([]);
+      return;
+    }
+    let active = true;
+    fetch(`${API_BASE_URL}/ai/chat/status`, { headers: authHeaders(user, viewRole) })
+      .then(async response => {
+        const data = await response.json().catch(() => ({})) as {
+          ai_disabled?: boolean;
+          ai_generating?: boolean;
+          titles?: CVTitleOption[];
+          message?: string;
+        };
+        if (!response.ok) throw new Error(data.message || `AI status request failed (${response.status}).`);
+        if (!active) return;
+        const options = Array.isArray(data.titles) ? data.titles.slice(0, 3) : [];
+        setAiDisabled(Boolean(data.ai_disabled));
+        setSavedTitles(options);
+        if (data.ai_disabled && options.length === 3) {
+          setCvNotice('Your one-time three-title generation has already been used. These saved results remain available.');
+          setMessages(current => {
+            if (current.some(message => message.text.startsWith('Your three saved capstone options'))) return current;
+            return [
+              ...current,
+              { role: 'ai', text: 'Your three saved capstone options are restored below. Further AI chat, uploads, and generation are disabled for this account.' },
+              ...options.map((option, index) => ({ role: 'ai' as const, text: titleOptionToChatMessage(option, index) })),
+            ];
+          });
+        }
+      })
+      .catch(error => {
+        // The backend remains authoritative; this request only restores the UI lock after reload.
+        console.warn('Could not restore JUAN-AI status:', error);
+      });
+    return () => { active = false; };
+  }, [user, viewRole]);
+
   const addBubble = (text: string, role: 'ai' | 'user') =>
     setMessages(m => [...m, { role, text }]);
 
   const uploadCV = async (file: File) => {
     if (!user) {
       setCvError('Sign in before uploading a CV.');
+      return;
+    }
+    if (aiDisabled) {
+      setCvError('AI is disabled for this account because the three capstone titles have already been generated.');
       return;
     }
     if (!/\.(pdf|docx|txt)$/i.test(file.name)) {
@@ -157,7 +227,10 @@ export default function Dashboard() {
     setCvBusy(true);
     setCvError('');
     setCvNotice('');
-    addBubble(`I'll read ${file.name}, identify the skills and interests described in it, then automatically suggest a beginner-friendly capstone title.`, 'ai');
+    addBubble(
+      `I'll analyze ${file.name} for your registered course, then generate three capstone options automatically. After the three options are saved, further AI use will be disabled for this account.`,
+      'ai',
+    );
 
     try {
       const response = await fetch(
@@ -173,97 +246,65 @@ export default function Dashboard() {
       const data = await response.json().catch(() => ({})) as {
         success?: boolean;
         filename?: string;
+        academic_program?: string;
         member_profile?: CVProfile;
+        titles?: CVTitleOption[];
+        ai_disabled?: boolean;
+        aiDisabled?: boolean;
         message?: string;
         detail?: string;
       };
+      if (data.aiDisabled || (response.status === 403 && data.message?.toLowerCase().includes('already'))) {
+        setAiDisabled(true);
+      }
       if (!response.ok) {
         throw new Error(data.message || data.detail || `CV analysis failed (${response.status}).`);
       }
       if (!data.member_profile) {
         throw new Error('The AI did not return a readable CV profile.');
       }
+      if (!Array.isArray(data.titles) || data.titles.length !== 3) {
+        throw new Error('The AI did not return exactly three capstone options.');
+      }
 
       const profile = data.member_profile;
       const filename = data.filename || file.name;
+      const options = data.titles;
       setCvProfile(profile);
       setCvFilename(filename);
+      setSavedTitles(options);
+      setAiDisabled(Boolean(data.ai_disabled));
 
       const skills = profile.skills?.slice(0, 6).join(', ') || 'No clear skills were identified';
       const tools = profile.tools_and_technologies?.slice(0, 5).join(', ') || 'No specific tools were identified';
       const interests = profile.research_interests?.slice(0, 4).join(', ') || 'No clear research interests were identified';
       const programSkills = profile.program_relevant_skills?.slice(0, 5).join(', ') || 'No course-specific skills were clearly identified';
-      const program = profile.academic_program || user.course || 'Unspecified / cross-disciplinary';
+      const program = profile.academic_program || data.academic_program || user.course || 'Unspecified / cross-disciplinary';
       const programSummary = profile.program_relevance_summary || 'No detailed course relevance could be established from this CV.';
       const experience = profile.experience_level || 'unclear';
 
       addBubble(
-        `CV review summary — ${filename}\nAcademic program: ${program}\nSkills identified: ${skills}\nTools and technologies: ${tools}\nCourse-relevant skills: ${programSkills}\nResearch interests: ${interests}\nProgram relevance: ${programSummary}\nEstimated experience level: ${experience}.\n\nThese are extracted highlights, not a judgement of your ability. I'll now suggest a project that fits your course and evidence in your CV.`,
+        `CV review summary — ${filename}\nAcademic program: ${program}\nSkills identified: ${skills}\nTools and technologies: ${tools}\nCourse-relevant skills: ${programSkills}\nResearch interests: ${interests}\nProgram relevance: ${programSummary}\nEstimated experience level: ${experience}.\n\nThese are extracted highlights, not a judgement of your ability. JUAN-AI has generated three project options using this information.`,
         'ai',
       );
 
-      const titlePrompt = `You are JUAN-AI, a practical college capstone mentor. Use the student's registered academic program and extracted CV profile to automatically propose exactly ONE realistic, beginner-friendly capstone project.
-
-JuanFinder supports: BSIT (Information Technology), BSCS (Computer Science), BS Tourism Management, BSCpE (Computer Engineering), BSBA (Business Administration), BSAIS (Accounting Information Systems), BSHM (Hospitality Management), and BACOMM (Communication). The profile's academic_program field is the authoritative program context. Do not assume every student is an IT/CS major.
-
-Choose a concrete project that fits the program:
-- BSIT: web/mobile applications, databases, networking, cybersecurity, or information systems.
-- BSCS: software engineering, computational/data problems, or carefully scoped AI when supported.
-- BS Tourism Management: itinerary or tour support, local destination information, visitor experience, tourism operations, or destination promotion.
-- BSCpE: practical hardware-software integration, embedded systems, sensors, device monitoring, or automation within student budget.
-- BSBA: business operations, inventory/sales, marketing, customer service, entrepreneurship, or business decision support.
-- BSAIS: bookkeeping support, expense/budget tracking, invoices, accounting records, audit trails, or accounting information systems; do not present the project as a substitute for a professional accountant.
-- BSHM: hotel/restaurant operations, reservations, menu/stock management, event operations, guest experience, or hospitality service quality.
-- BACOMM: communication campaigns, media/content workflows, digital publishing, audience feedback, journalism support, or public information.
-
-Rules:
-- Use only skills and interests supported by the CV; do not invent experience.
-- A CV job title, club role, employer, or course name is not a capstone title. Recommend an actual project with a clear problem and intended users.
-- For non-technical experience, translate documented experience into a feasible project relevant to the student's program without forcing a software project if inappropriate.
-- Keep the scope realistic for a college team and do not include personal contact details.
-
-Return exactly five lines, one item per line. Start each line with the visible bullet character •. Do not use Markdown bold markers:
-• Capstone Title: [specific project title suitable for the academic program]
-• Why It Fits Your CV: [brief rationale citing actual skills/interests and the program]
-• Possible Solution: [one or two concise sentences]
-• Skills to Learn: [short list]
-• Feasibility: [High or Medium] — [one short reason]
-
-Provide a brief, checkable rationale summary only, not private hidden chain-of-thought. If the CV lacks technical details, state the assumption briefly and keep the idea achievable.`;
-      const titleRequest = 'Generate my capstone title now from the CV I just uploaded. Do not ask me to request a title separately.';
-      addBubble('Title generation: matching the skills and interests listed above to a realistic beginner project, then checking that the suggested scope is achievable.', 'ai');
-
-      try {
-        const titleUserMessage: AIMessage = { role: 'user', content: titleRequest };
-        const reply = await callAI(
-          addCVContext(titlePrompt, profile, filename),
-          [...chatHistory, titleUserMessage].slice(-12),
-          user,
-          viewRole,
-        );
-        const updatedHistory: AIMessage[] = [
-          ...chatHistory,
-          titleUserMessage,
-          { role: 'assistant', content: reply },
-        ];
-        setChatHistory(updatedHistory.slice(-12));
-        addBubble(reply, 'ai');
-        setCvNotice('CV analyzed and a capstone title was generated automatically.');
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : 'The title request failed.';
-        setCvError(`Your CV was analyzed, but automatic title generation failed: ${reason}`);
-        addBubble(`I analyzed your CV, but I couldn't generate the title this time. ${reason} You can try sending a message again.`, 'ai');
-      }
+      options.forEach((option, index) => addBubble(titleOptionToChatMessage(option, index), 'ai'));
+      addBubble(
+        'Your three capstone options have been saved to your account. AI chat, new CV uploads, and further title generation are now disabled for this account. You can still view these recommendations.',
+        'ai',
+      );
+      setCvNotice('Three personalized capstone options generated and saved. AI is now disabled for this account.');
     } catch (error) {
-      const reason = error instanceof Error ? error.message : 'CV analysis failed. Please try again.';
+      const reason = error instanceof Error ? error.message : 'CV analysis and title generation failed. Please try again.';
       setCvError(reason);
-      addBubble(`I couldn't analyze that CV: ${reason}`, 'ai');
+      addBubble(`I couldn't complete your CV analysis and title generation: ${reason}`, 'ai');
     } finally {
       setCvBusy(false);
     }
   };
 
   const sendMsg = async (text: string) => {
+    if (aiDisabled) return;
     if (!text.trim() || aiLoading) return;
     setInputVal('');
     addBubble(text, 'user');
@@ -283,6 +324,7 @@ Provide a brief, checkable rationale summary only, not private hidden chain-of-t
   };
 
   const fetchTitles = async (groupName: string) => {
+    if (aiDisabled) return;
     setTitles([]); setTitlesGroup(groupName);
     try {
       const prompt = addCVContext(AI_CONFIG.titlePromptTemplate.replace('{groupName}', groupName), cvProfile, cvFilename);
@@ -444,18 +486,18 @@ Provide a brief, checkable rationale summary only, not private hidden chain-of-t
                     type="button"
                     className="ai-send"
                     onClick={() => cvInputRef.current?.click()}
-                    disabled={aiLoading || cvBusy}
+                    disabled={aiDisabled || aiLoading || cvBusy}
                     aria-label="Upload CV"
                     title="Upload a CV (PDF, DOCX, TXT; max 10 MB)"
                   >
                     {cvBusy ? <Spinner size="sm" /> : <i className="ti ti-paperclip"></i>}
                   </button>
-                  <Form.Control className="ai-input" placeholder="Ask about groups or titles…" value={inputVal} onChange={e => setInputVal(e.target.value)} onKeyDown={e => e.key==='Enter' && sendMsg(inputVal)} disabled={aiLoading || cvBusy} />
-                  <button className="ai-send" onClick={() => sendMsg(inputVal)} disabled={aiLoading || cvBusy}>
+                  <Form.Control className="ai-input" placeholder={aiDisabled ? "AI access used — your 3 titles are saved" : "Ask about groups or titles…"} value={inputVal} onChange={e => setInputVal(e.target.value)} onKeyDown={e => e.key==='Enter' && sendMsg(inputVal)} disabled={aiDisabled || aiLoading || cvBusy} />
+                  <button className="ai-send" onClick={() => sendMsg(inputVal)} disabled={aiDisabled || aiLoading || cvBusy}>
                     {aiLoading ? <Spinner size="sm" /> : <i className="ti ti-send"></i>}
                   </button>
                 </InputGroup>
-                <div style={{ fontSize: 10, padding: '4px 8px', color: '#a8c3e8' }}>Attach a CV to personalize advice (PDF, DOCX, TXT; max 10 MB).</div>
+                <div style={{ fontSize: 10, padding: '4px 8px', color: '#a8c3e8' }}>{aiDisabled ? "AI is disabled for this account after generating three capstone titles. Your saved recommendations are shown in the chat." : "Attach a CV to analyze your course-relevant skills and automatically generate three capstone titles (PDF, DOCX, TXT; max 10 MB)."}</div>
               </div>
             </div>
           </Col>
