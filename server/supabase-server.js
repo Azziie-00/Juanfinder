@@ -1035,6 +1035,7 @@ app.post("/api/ai/chat/analyze-cv", getUser, requireStudent,
         try {
             const form = new FormData();
             form.append("file", new Blob([req.body]), filename);
+            form.append("course", String(req.user.course || "Unspecified"));
             const analyzed = await callAIService("/analyze-member", {
                 method: "POST",
                 body: form,
@@ -1120,6 +1121,7 @@ app.post("/api/ai/groups/:groupId/analyze-member", getUser, requireStudent,
         try {
             const form = new FormData();
             form.append("file", new Blob([req.body]), filename);
+            form.append("course", String(req.user.course || "Unspecified"));
             const analyzed = await callAIService("/analyze-member", { method: "POST", body: form });
             const profile = analyzed.member_profile;
             const { error } = await supabase.from("ai_member_profiles").upsert({
