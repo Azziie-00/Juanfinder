@@ -15,7 +15,7 @@ This service extracts text from student CVs and documents and calls Ollama for p
    .\.venv\Scripts\Activate.ps1
    pip install -r requirements.txt
    Copy-Item .env.example .env
-   uvicorn main:app --host 127.0.0.1 --port 8001
+   uvicorn main:app --env-file .env --host 127.0.0.1 --port 8001
    ```
 
 5. In a second terminal, set `AI_SERVICE_URL=http://127.0.0.1:8001` in `server/.env` and start the existing API:
@@ -28,11 +28,22 @@ This service extracts text from student CVs and documents and calls Ollama for p
 
 6. Check `http://127.0.0.1:8001/health` and `http://localhost:5000/api/ai/health`.
 
-## 2. Database
+## 2. Database setup
 
-Run `server/ai-schema.sql` in Supabase SQL Editor. This creates a private-by-default table for each group member's extracted profile and a table for the selected capstone title.
+Run both scripts in the Supabase SQL Editor:
 
-## 3. API flow
+1. `server/ai-schema.sql` creates the private-by-default tables used by the group capstone generator and selected title.
+2. `server/ai-user-usage.sql` creates the private one-time AI usage ledger and service-role-only database functions. It enforces one successful CV-based generation of exactly three title options per user, then persistently disables that user's AI chat and generation endpoints.
+
+Do not skip `ai-user-usage.sql`: the API returns a configuration error until the usage table and RPC functions exist. The three returned title options are stored so the user can still view them after refreshing. The original uploaded CV and extracted profile are not persisted by the Dashboard chat workflow.
+
+## 3. One-time CV workflow
+
+The student uploads one PDF, DOCX, or TXT CV (maximum 10 MB). The API takes the course from the authenticated Supabase user record, asks Ollama to extract course-aware skills, then requests exactly three distinct title candidates. Only after all three options are successfully generated and saved does the database switch the user to `disabled`. The Dashboard disables chat and uploads, and its status endpoint restores the saved options after a page refresh. Failed analysis/generation releases the temporary claim and allows a retry.
+
+Supported programs: BSIT, BSCS, BS Tourism Management, BSCpE, BSBA, BSAIS, BSHM, and BACOMM.
+
+## 4. Group capstone API flow
 
 - `POST /api/ai/groups/:groupId/analyze-member?filename=resume.pdf` with an `application/octet-stream` body. The body is the original file bytes.
 - `POST /api/ai/groups/:groupId/generate-titles` generates three title options from the group's saved profiles.
