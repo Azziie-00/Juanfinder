@@ -90,6 +90,7 @@ export default function Dashboard() {
   const [cvFilename, setCvFilename] = useState<string | null>(null);
   const [cvBusy, setCvBusy] = useState(false);
   const [cvError, setCvError] = useState('');
+  const [cvNotice, setCvNotice] = useState('');
   const cvInputRef = useRef<HTMLInputElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
@@ -138,7 +139,7 @@ export default function Dashboard() {
 
     setCvBusy(true);
     setCvError('');
-    setNotice('');
+    setCvNotice('');
     addBubble(`I'll read ${file.name}, identify the skills and interests described in it, then automatically suggest a beginner-friendly capstone title.`, 'ai');
 
     try {
@@ -198,7 +199,7 @@ export default function Dashboard() {
           { role: 'assistant', content: reply },
         ].slice(-12));
         addBubble(reply, 'ai');
-        setNotice('CV analyzed and a capstone title was generated automatically.');
+        setCvNotice('CV analyzed and a capstone title was generated automatically.');
       } catch (error) {
         const reason = error instanceof Error ? error.message : 'The title request failed.';
         setCvError(`Your CV was analyzed, but automatic title generation failed: ${reason}`);
@@ -373,6 +374,7 @@ export default function Dashboard() {
                     </div>
                   )}
                   {cvError && <div role="alert" style={{ color: '#fecaca', marginTop: 4 }}>{cvError}</div>}
+                  {cvNotice && <div role="status" style={{ color: '#bbf7d0', marginTop: 4 }}>{cvNotice}</div>}
                 </div>
               )}
               <div className="ai-input-area">
