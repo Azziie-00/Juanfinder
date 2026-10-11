@@ -1018,6 +1018,46 @@ app.get("/api/ai/health", async (_req, res) => {
     }
 });
 
+app.post("/api/ai/chat/analyze-cv", getUser, requireStudent,
+    express.raw({ type: "application/octet-stream", limit: "10mb" }),
+    async (req, res) => {
+        const filename = String(req.query.filename || "cv.txt").split(/[\\/]/).pop();
+        if (!/\.(pdf|docx|txt)$/i.test(filename)) {
+            return res.status(400).json({ success: false, message: "Upload a PDF, DOCX, or TXT file." });
+        }
+        if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+            return res.status(400).json({ success: false, message: "No file bytes received." });
+        }
+        if (req.body.length > 10 * 1024 * 1024) {
+            return res.status(413).json({ success: false, message: "File exceeds the 10 MB limit." });
+        }
+
+        try {
+            const form = new FormData();
+            form.append("file", new Blob([req.body]), filename);
+            const analyzed = await callAIService("/analyze-member", {
+                method: "POST",
+                body: form,
+            });
+            if (!analyzed?.member_profile) {
+                return res.status(502).json({ success: false, message: "The AI did not return a CV profile." });
+            }
+            // The dashboard chat uses this profile in memory only; it is not stored in Supabase.
+            res.json({
+                success: true,
+                filename,
+                member_profile: analyzed.member_profile,
+            });
+        } catch (error) {
+            console.error("CV analysis error:", error.message);
+            res.status(error.status || 503).json({
+                success: false,
+                message: error.message || "CV analysis failed.",
+            });
+        }
+    }
+);
+
 app.post("/api/ai/chat", getUser, async (req, res) => {
     const systemPrompt = req.body?.systemPrompt;
     const messages = req.body?.messages;
