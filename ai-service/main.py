@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import (Depends, FastAPI, File, Header, HTTPException, UploadFile)
 from pydantic import BaseModel, Field
 from document_parser import extract_document
-from ai_service import AIServiceError, analyze_member, generate_titles
+from ai_service import AIServiceError, analyze_member, chat_reply, generate_titles
 
 app = FastAPI(title="JuanFinder AI Service", version="0.1.0")
 AI_SERVICE_TOKEN = os.getenv("AI_SERVICE_TOKEN", "").strip()
@@ -33,6 +33,14 @@ MAX_FILE_BYTES = 10 * 1024 * 1024
 class TitleRequest(BaseModel):
     member_profiles: list[dict] = Field(min_length=1, max_length=4)
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str = Field(min_length=1, max_length=4000)
+
+class ChatRequest(BaseModel):
+    system_prompt: str = Field(min_length=1, max_length=8000)
+    messages: list[ChatMessage] = Field(min_length=1, max_length=12)
+
 @app.get("/health")
 def health():
     return {"status": "ok", "model": os.getenv("OLLAMA_MODEL", "llama3.2:1b")}
@@ -58,5 +66,18 @@ async def analyze_member_endpoint(file: UploadFile = File(...)):
 def generate_titles_endpoint(request: TitleRequest):
     try:
         return generate_titles(request.member_profiles)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+@app.post("/chat", dependencies=[Depends(require_ai_service_token)])
+def chat_endpoint(request: ChatRequest):
+    if any(message.role not in {"user", "assistant"} for message in request.messages):
+        raise HTTPException(status_code=400, detail="Invalid chat message role.")
+    try:
+        reply = chat_reply(
+            request.system_prompt,
+            [message.model_dump() for message in request.messages],
+        )
+        return {"reply": reply}
     except AIServiceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
