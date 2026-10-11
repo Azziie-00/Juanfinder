@@ -185,7 +185,12 @@ export default function Dashboard() {
       const reply = await callAI(addCVContext(AI_CONFIG.systemPrompt, cvProfile, cvFilename), newHist, user, viewRole);
       setChatHistory([...newHist, { role:'assistant', content:reply }]);
       addBubble(reply, 'ai');
-    } catch { addBubble('Connection issue. Try again.', 'ai'); }
+    } catch (error) {
+      addBubble(
+        error instanceof Error ? error.message : 'Connection issue. Please try again.',
+        'ai',
+      );
+    }
     setAiLoading(false);
   };
 
