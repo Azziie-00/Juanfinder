@@ -134,7 +134,6 @@ export default function Dashboard() {
   const [cvError, setCvError] = useState('');
   const [cvNotice, setCvNotice] = useState('');
   const [aiDisabled, setAiDisabled] = useState(false);
-  const [savedTitles, setSavedTitles] = useState<CVTitleOption[]>([]);
   const cvInputRef = useRef<HTMLInputElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
@@ -163,7 +162,6 @@ export default function Dashboard() {
   useEffect(() => {
     if (!user) {
       setAiDisabled(false);
-      setSavedTitles([]);
       return;
     }
     let active = true;
@@ -179,7 +177,6 @@ export default function Dashboard() {
         if (!active) return;
         const options = Array.isArray(data.titles) ? data.titles.slice(0, 3) : [];
         setAiDisabled(Boolean(data.ai_disabled));
-        setSavedTitles(options);
         if (data.ai_disabled && options.length === 3) {
           setCvNotice('Your one-time three-title generation has already been used. These saved results remain available.');
           setMessages(current => {
@@ -272,7 +269,6 @@ export default function Dashboard() {
       const options = data.titles;
       setCvProfile(profile);
       setCvFilename(filename);
-      setSavedTitles(options);
       setAiDisabled(Boolean(data.ai_disabled));
 
       const skills = profile.skills?.slice(0, 6).join(', ') || 'No clear skills were identified';
