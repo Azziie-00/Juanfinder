@@ -187,17 +187,19 @@ export default function Dashboard() {
       addBubble('Title generation: matching the skills and interests listed above to a realistic beginner project, then checking that the suggested scope is achievable.', 'ai');
 
       try {
+        const titleUserMessage: AIMessage = { role: 'user', content: titleRequest };
         const reply = await callAI(
           addCVContext(titlePrompt, profile, filename),
-          [...chatHistory, { role: 'user', content: titleRequest }].slice(-12),
+          [...chatHistory, titleUserMessage].slice(-12),
           user,
           viewRole,
         );
-        setChatHistory([
+        const updatedHistory: AIMessage[] = [
           ...chatHistory,
-          { role: 'user', content: titleRequest },
+          titleUserMessage,
           { role: 'assistant', content: reply },
-        ].slice(-12));
+        ];
+        setChatHistory(updatedHistory.slice(-12));
         addBubble(reply, 'ai');
         setCvNotice('CV analyzed and a capstone title was generated automatically.');
       } catch (error) {
