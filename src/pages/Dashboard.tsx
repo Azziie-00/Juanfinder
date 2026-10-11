@@ -212,7 +212,7 @@ export default function Dashboard() {
     setAiLoading(true);
     const newHist: AIMessage[] = [...chatHistory, { role:'user', content:`Student requested to join "${group.name}". Let them know their request is pending approval in under 50 words.` }];
     try {
-      const reply = await callAI(AI_CONFIG.systemPrompt, newHist, user, viewRole,);
+      const reply = await callAI(addCVContext(AI_CONFIG.systemPrompt, cvProfile, cvFilename), newHist, user, viewRole);
       setChatHistory([...newHist, { role:'assistant', content:reply }]);
       addBubble(reply, 'ai');
     } catch { addBubble('Welcome to the group!', 'ai'); }
