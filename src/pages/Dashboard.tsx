@@ -13,6 +13,20 @@ import '../styles/dashboard.css';
 
 interface ChatMessage { role: 'ai' | 'user'; text: string; }
 interface AIMessage   { role: 'user' | 'assistant'; content: string; }
+
+function formatAIMessage(message: string): string {
+  const labels = 'Capstone Title|Why It Fits Your CV|Possible Solution|Skills to Learn|Feasibility';
+  let formatted = message.trim();
+  // Convert headings / markdown labels into separate, visible bullet lines.
+  formatted = formatted.replace(
+    new RegExp(String.raw\`\\s*•?\\s*(?:\\*\\*)?(\${labels}):(?:\\*\\*)?\\s*\`, 'gi'),
+    (_match, label: string) => \`\\n• \${label}: \`,
+  );
+  formatted = formatted.replace(/\\*\\*(.*?)\\*\\*/g, '$1');
+  formatted = formatted.replace(/\\n{3,}/g, '\\n\\n').replace(/^\\n+/, '');
+  return formatted;
+}
+
 type CVProfile = {
   skills?: string[];
   tools_and_technologies?: string[];
@@ -182,7 +196,23 @@ export default function Dashboard() {
         'ai',
       );
 
-      const titlePrompt = `You are JUAN-AI, a practical college capstone mentor. Based on the attached student's extracted CV profile, automatically propose exactly ONE beginner-friendly IT/CS capstone title. Prefer realistic web, mobile, or information-system projects. Suggest AI or IoT only when supported by the profile. Do not invent skills or experience. Do not include personal contact details.\n\nReturn a concise, student-friendly answer as a Markdown-style bullet list. Every section must be a bullet beginning with the visible bullet character "•" because the chat displays plain text. Use exactly this format:\n• **Capstone Title:** [one specific title]\n• **Why It Fits Your CV:** [brief rationale citing relevant extracted skills/interests]\n• **Possible Solution:** [one or two sentences]\n• **Skills to Learn:** [a short list]\n• **Feasibility:** [High or Medium, with one short reason]\nThe capstone title itself must be included as a bullet, not as a standalone heading or numbered item.\n\nShow a brief, verifiable explanation summary only, not private hidden chain-of-thought. If the CV lacks detail, state your assumption briefly and keep the idea achievable.`;
+      const titlePrompt = `You are JUAN-AI, a practical college capstone mentor. Use the student's extracted CV profile to automatically propose exactly ONE beginner-friendly college IT/CS capstone project.
+
+IMPORTANT TITLE RULES:
+- The title must be a real software, web, mobile, information-system, or other feasible IT/CS project—not a job position, course, club, employer, or CV activity.
+- Never suggest a person's job role as the project title (for example, Associate Secretary).
+- Translate non-technical CV experience into a useful digital solution when possible. Use only evidenced skills and interests; do not invent experience.
+- Prefer a buildable project with a clear user/problem. Suggest AI or IoT only when the CV supports it and the scope is realistic.
+- Do not include personal contact details.
+
+Return exactly five lines, one item per line. Start every line with the visible bullet character •. Do not use Markdown bold markers or numbered headings. Use this exact format:
+• Capstone Title: Design and Development of a [specific software/system] for [specific users or problem]
+• Why It Fits Your CV: [brief rationale citing skills/interests actually extracted]
+• Possible Solution: [one or two concise sentences describing the system]
+• Skills to Learn: [short list of relevant skills]
+• Feasibility: [High or Medium] — [one short reason]
+
+Provide a brief, checkable rationale summary only, not private hidden chain-of-thought. If the CV lacks technical details, state what assumption you made and keep the idea achievable.`;
       const titleRequest = 'Generate my capstone title now from the CV I just uploaded. Do not ask me to request a title separately.';
       addBubble('Title generation: matching the skills and interests listed above to a realistic beginner project, then checking that the suggested scope is achievable.', 'ai');
 
@@ -357,7 +387,7 @@ export default function Dashboard() {
                 </div>
               )}
               <div className="ai-chat" ref={chatRef}>
-                {messages.map((m,i) => <div key={i} className={`bubble ${m.role}`}>{m.text}</div>)}
+                {messages.map((m,i) => <div key={i} className={`bubble ${m.role}`} style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.role === 'ai' ? formatAIMessage(m.text) : m.text}</div>)}
                 {aiLoading && <div className="bubble ai"><span className="typing-dot"></span><span className="typing-dot"></span><span className="typing-dot"></span></div>}
               </div>
               {(cvFilename || cvError) && (
