@@ -125,7 +125,7 @@ a { text-decoration: none; color: inherit; }
 .announce-msg   { background: var(--navy); border-radius: 8px; padding: 10px 14px; font-size: 13px; color: rgba(255,255,255,.6); text-align: center; }
 
 /*Groups*/
-.groups-card   { background: var(--blue-card); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; height: 100%; }
+.groups-card   { background: var(--blue-card); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; flex: 0 0 280px; height: 280px; min-height: 280px; max-height: 280px; overflow: hidden; }
 .groups-title  { font-size: 12px; font-weight: 700; color: var(--navy); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
 .ai-badge      { font-size: 10px; font-weight: 600; background: var(--amber); color: var(--navy); border-radius: 4px; padding: 1px 6px; }
 .groups-scroll { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
