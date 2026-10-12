@@ -273,6 +273,84 @@ def generate_cv_titles(member_profile: dict, course: str = "Unspecified") -> dic
         "BACOMM": "communication campaigns, digital content, media workflows, public information, audience feedback, journalism support",
     }.get(program_code, "a practical project based on the student's evidenced skills and interests")
 
+    fallback_titles_by_program = {
+        "BSIT": [
+            "Design and Development of a Student Support Request and Tracking System",
+            "Design and Development of a Campus Laboratory Equipment Inventory System",
+            "Design and Development of a Student Organization Activities Management System",
+            "Design and Development of a Campus Information and Announcement Portal",
+        ],
+        "BSCS": [
+            "Design and Development of a Student Study Planner and Progress Tracking Application",
+            "Design and Development of a Campus Resource Search and Recommendation Tool",
+            "Design and Development of a Student Data Visualization and Reporting Application",
+            "Design and Development of a Learning Activity Scheduling and Reminder System",
+        ],
+        "BSTOURISMMANAGEMENT": [
+            "Design and Development of a Local Destination Information and Itinerary Planner",
+            "Design and Development of a Community Tourism Visitor Guide",
+            "Design and Development of a Tour Inquiry and Schedule Management System",
+            "Design and Development of a Local Tourism Product and Attraction Directory",
+        ],
+        "BSCPE": [
+            "Design and Development of a Microcontroller-Based Room Environment Monitoring System",
+            "Design and Development of a Low-Cost Equipment Status Monitoring Device",
+            "Design and Development of a Sensor-Based Water Level Monitoring Prototype",
+            "Design and Development of a Classroom Energy Usage Monitoring Prototype",
+        ],
+        "BSBA": [
+            "Design and Development of a Small Business Inventory and Sales Tracking System",
+            "Design and Development of a Customer Feedback and Service Monitoring System",
+            "Design and Development of a Small Enterprise Order and Delivery Tracker",
+            "Design and Development of a Business Expense and Performance Dashboard",
+        ],
+        "BSAIS": [
+            "Design and Development of a Small Business Expense and Budget Tracking System",
+            "Design and Development of an Invoice and Payment Record Management System",
+            "Design and Development of a Digital Bookkeeping Records Organizer",
+            "Design and Development of an Accounting Document Tracking and Audit Trail System",
+        ],
+        "BSHM": [
+            "Design and Development of a Hotel Reservation Inquiry and Guest Service System",
+            "Design and Development of a Restaurant Inventory and Menu Cost Tracking System",
+            "Design and Development of a Hospitality Event Reservation Management System",
+            "Design and Development of a Guest Feedback and Service Quality Monitoring System",
+        ],
+        "BACOMM": [
+            "Design and Development of a Digital Communication Campaign Planner",
+            "Design and Development of a Community Information and Media Publishing Portal",
+            "Design and Development of a Content Calendar and Audience Engagement Tracker",
+            "Design and Development of a Campus News and Announcement Management Platform",
+        ],
+        "UNSPECIFIED": [
+            "Design and Development of a Student Skills Portfolio and Project Showcase System",
+            "Design and Development of a Community Services Information Portal",
+            "Design and Development of a Student Activity and Resource Tracking System",
+            "Design and Development of a Small Organization Records Management System",
+        ],
+    }
+    fallback_titles = fallback_titles_by_program.get(program_code, fallback_titles_by_program["UNSPECIFIED"])
+    fallback_skills_to_learn = {
+        "BSIT": ["database design", "web application development", "software testing"],
+        "BSCS": ["software design", "data structures", "testing and evaluation"],
+        "BSTOURISMMANAGEMENT": ["tourism content research", "itinerary planning", "user experience"],
+        "BSCPE": ["microcontroller programming", "sensor integration", "prototype testing"],
+        "BSBA": ["business process analysis", "data management", "basic reporting"],
+        "BSAIS": ["database design", "accounting workflow analysis", "record validation"],
+        "BSHM": ["hospitality workflow analysis", "reservation management", "service evaluation"],
+        "BACOMM": ["content planning", "digital publishing", "audience evaluation"],
+    }.get(program_code, ["research methods", "project planning", "user feedback evaluation"])
+    fallback_users = {
+        "BSIT": ["students", "school offices"],
+        "BSCS": ["students", "faculty"],
+        "BSTOURISMMANAGEMENT": ["tourists", "local tourism stakeholders"],
+        "BSCPE": ["laboratory users", "equipment administrators"],
+        "BSBA": ["small business owners", "staff"],
+        "BSAIS": ["small business owners", "bookkeeping staff"],
+        "BSHM": ["hospitality staff", "guests"],
+        "BACOMM": ["students", "community organizations"],
+    }.get(program_code, ["students", "community organizations"])
+
     clean_titles = []
     seen_titles = set()
 
@@ -311,10 +389,42 @@ Rules: propose a real, achievable college project/system/product, not a job titl
                 last_error = exc
 
         if candidate is None:
-            raise AIServiceError(
-                f"JUAN-AI could not create a valid, distinct title option {option_number}. "
-                "Please try again. No generation has been consumed."
-            ) from last_error
+            # The 1B model can omit fields or repeat itself. Fall back to a safe,
+            # course-aligned title so one malformed response doesn't abort the full set.
+            fallback_title = next(
+                (
+                    item for item in fallback_titles
+                    if re.sub(r"\W+", "", item.lower()) not in seen_titles
+                ),
+                None,
+            )
+            if not fallback_title:
+                raise AIServiceError(
+                    f"Could not create a unique title option {option_number}. Please retry."
+                ) from last_error
+            profile_skills = compact_profile.get("program_relevant_skills", [])
+            if not isinstance(profile_skills, list):
+                profile_skills = []
+            candidate = {
+                "title": fallback_title,
+                "reason_for_fit": (
+                    f"This course-aligned fallback is based on {program_name} and the available CV summary. "
+                    "Please review the final project scope with your capstone adviser."
+                ),
+                "description": (
+                    f"A beginner-friendly project direction related to {program_focus}. "
+                    "Confirm the main features with intended users and your adviser."
+                ),
+                "problem": "The intended users need a clearer way to manage a recurring task or information.",
+                "proposed_solution": (
+                    "Build a small project focused on the core workflow, test it with intended users, "
+                    "and improve it using their feedback."
+                ),
+                "relevant_member_skills": profile_skills[:5],
+                "skills_to_learn": fallback_skills_to_learn,
+                "intended_users": fallback_users,
+                "feasibility": "high",
+            }
 
         title = str(candidate.get("title", "")).strip()[:300]
         seen_titles.add(re.sub(r"\W+", "", title.lower()))
@@ -332,12 +442,15 @@ Rules: propose a real, achievable college project/system/product, not a job titl
         clean_titles.append({
             "title": title,
             "reason_for_fit": str(candidate.get("reason_for_fit", ""))[:700],
-            "description": str(candidate.get("description", ""))[:1000],
-            "problem": str(candidate.get("problem", ""))[:700],
-            "proposed_solution": str(candidate.get("proposed_solution", ""))[:1000],
-            "relevant_member_skills": clean_list("relevant_member_skills"),
-            "skills_to_learn": clean_list("skills_to_learn"),
-            "intended_users": clean_list("intended_users"),
+            "description": str(candidate.get("description") or f"A realistic student capstone related to {program_focus}.")[:1000],
+            "problem": str(candidate.get("problem") or "The intended users need a clearer way to manage a recurring task or information.")[:700],
+            "proposed_solution": str(candidate.get("proposed_solution") or "Start with the core workflow, validate it with intended users, and keep advanced features optional.")[:1000],
+            "relevant_member_skills": clean_list("relevant_member_skills") or (
+                compact_profile.get("program_relevant_skills", [])[:5]
+                if isinstance(compact_profile.get("program_relevant_skills"), list) else []
+            ),
+            "skills_to_learn": clean_list("skills_to_learn") or fallback_skills_to_learn,
+            "intended_users": clean_list("intended_users") or fallback_users,
             "feasibility": feasibility,
         })
 
