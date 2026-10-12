@@ -141,6 +141,38 @@ const requireStudent = (req, res, next) => {
     next();
 };
 
+const requireAIAvailable = async (req, res, next) => {
+    try {
+        const { data, error } = await supabase.from("ai_user_ai_usage")
+            .select("status").eq("user_id", req.user.user_id).maybeSingle();
+        if (error) {
+            console.error("AI usage check failed:", error.message);
+            return res.status(503).json({
+                success: false,
+                message: "AI usage controls are not configured. Run server/ai-user-usage.sql in Supabase, then retry.",
+            });
+        }
+        if (data?.status === "disabled") {
+            return res.status(403).json({
+                success: false,
+                aiDisabled: true,
+                message: "Your three personalized capstone titles have already been generated. AI chat and new AI generation are now disabled for this account, but your saved recommendations remain available.",
+            });
+        }
+        if (data?.status === "generating") {
+            return res.status(409).json({
+                success: false,
+                aiGenerating: true,
+                message: "Your three capstone titles are being generated. Please wait.",
+            });
+        }
+        next();
+    } catch (error) {
+        console.error("AI usage middleware error:", error.message);
+        res.status(503).json({ success: false, message: "Unable to verify AI access right now." });
+    }
+};
+
 app.post("/api/login", async (req, res) => {
     const { username, password, role } = req.body;
     if (!username || !password || !role) return res.status(400).json({ success: false, message: "Username, password, and role are required." });
@@ -1018,7 +1050,29 @@ app.get("/api/ai/health", async (_req, res) => {
     }
 });
 
-app.post("/api/ai/chat/analyze-cv", getUser, requireStudent,
+app.get("/api/ai/chat/status", getUser, async (req, res) => {
+    const { data, error } = await supabase.from("ai_user_ai_usage")
+        .select("status,generated_titles,disabled_at")
+        .eq("user_id", req.user.user_id).maybeSingle();
+    if (error) {
+        console.error("AI status lookup failed:", error.message);
+        return res.status(503).json({
+            success: false,
+            message: "AI usage controls are not configured. Run server/ai-user-usage.sql in Supabase.",
+        });
+    }
+    const status = data?.status || "available";
+    res.set("Cache-Control", "no-store");
+    res.json({
+        status,
+        ai_disabled: status === "disabled",
+        ai_generating: status === "generating",
+        titles: Array.isArray(data?.generated_titles) ? data.generated_titles : [],
+        disabled_at: data?.disabled_at || null,
+    });
+});
+
+app.post("/api/ai/chat/analyze-cv", getUser, requireStudent, requireAIAvailable,
     express.raw({ type: "application/octet-stream", limit: "10mb" }),
     async (req, res) => {
         const filename = String(req.query.filename || "cv.txt").split(/[\\/]/).pop();
@@ -1032,33 +1086,101 @@ app.post("/api/ai/chat/analyze-cv", getUser, requireStudent,
             return res.status(413).json({ success: false, message: "File exceeds the 10 MB limit." });
         }
 
+        let generationClaimed = false;
         try {
+            const claim = await supabase.rpc("claim_ai_title_generation", {
+                p_user_id: req.user.user_id,
+            });
+            if (claim.error) {
+                console.error("AI title quota claim failed:", claim.error.message);
+                return res.status(503).json({
+                    success: false,
+                    message: "AI usage controls are not configured. Run server/ai-user-usage.sql in Supabase.",
+                });
+            }
+            if (claim.data !== true) {
+                const current = await supabase.from("ai_user_ai_usage")
+                    .select("status").eq("user_id", req.user.user_id).maybeSingle();
+                if (current.data?.status === "disabled") {
+                    return res.status(403).json({
+                        success: false,
+                        aiDisabled: true,
+                        message: "Your three capstone recommendations have already been generated. AI is disabled for this account.",
+                    });
+                }
+                return res.status(409).json({
+                    success: false,
+                    message: "Your AI title generation is already in progress. Please wait.",
+                });
+            }
+            generationClaimed = true;
+
             const form = new FormData();
             form.append("file", new Blob([req.body]), filename);
+            form.append("course", String(req.user.course || "Unspecified"));
             const analyzed = await callAIService("/analyze-member", {
                 method: "POST",
                 body: form,
             });
             if (!analyzed?.member_profile) {
-                return res.status(502).json({ success: false, message: "The AI did not return a CV profile." });
+                const error = new Error("The AI did not return a readable CV profile.");
+                error.status = 502;
+                throw error;
             }
-            // The dashboard chat uses this profile in memory only; it is not stored in Supabase.
-            res.json({
+
+            const generated = await callAIService("/generate-cv-titles", {
+                method: "POST",
+                headers: aiJsonHeaders,
+                body: JSON.stringify({
+                    course: String(req.user.course || "Unspecified"),
+                    member_profile: analyzed.member_profile,
+                }),
+            });
+            if (!Array.isArray(generated?.titles) || generated.titles.length !== 3) {
+                const error = new Error("The AI did not return exactly three title options. Please try again.");
+                error.status = 503;
+                throw error;
+            }
+
+            const completed = await supabase.rpc("complete_ai_title_generation", {
+                p_user_id: req.user.user_id,
+                p_titles: generated.titles,
+            });
+            if (completed.error || completed.data !== true) {
+                console.error("AI title quota completion failed:", completed.error?.message || "No row was completed.");
+                const error = new Error("The titles were generated but could not be saved to your account. Please contact the administrator.");
+                error.status = 503;
+                throw error;
+            }
+
+            generationClaimed = false;
+            res.set("Cache-Control", "no-store");
+            return res.json({
                 success: true,
                 filename,
+                academic_program: generated.academic_program || analyzed.member_profile.academic_program || req.user.course || "Unspecified",
                 member_profile: analyzed.member_profile,
+                titles: generated.titles,
+                ai_disabled: true,
+                message: "Three title recommendations have been saved. AI is now disabled for this account.",
             });
         } catch (error) {
-            console.error("CV analysis error:", error.message);
-            res.status(error.status || 503).json({
+            if (generationClaimed) {
+                const release = await supabase.rpc("release_ai_title_generation", {
+                    p_user_id: req.user.user_id,
+                });
+                if (release.error) console.error("AI quota release failed:", release.error.message);
+            }
+            console.error("CV analysis/title generation error:", error.message);
+            return res.status(error.status || 503).json({
                 success: false,
-                message: error.message || "CV analysis failed.",
+                message: error.message || "CV analysis and title generation failed.",
             });
         }
     }
 );
 
-app.post("/api/ai/chat", getUser, async (req, res) => {
+app.post("/api/ai/chat", getUser, requireAIAvailable, async (req, res) => {
     const systemPrompt = req.body?.systemPrompt;
     const messages = req.body?.messages;
     if (typeof systemPrompt !== "string" || !systemPrompt.trim() || systemPrompt.length > 8000) {
@@ -1099,7 +1221,7 @@ app.post("/api/ai/chat", getUser, async (req, res) => {
 
 // The browser sends the original file bytes as application/octet-stream.
 // Keep file parsing and model calls behind this API instead of exposing Ollama.
-app.post("/api/ai/groups/:groupId/analyze-member", getUser, requireStudent,
+app.post("/api/ai/groups/:groupId/analyze-member", getUser, requireStudent, requireAIAvailable,
     express.raw({ type: "application/octet-stream", limit: "10mb" }),
     async (req, res) => {
         const groupId = Number(req.params.groupId);
@@ -1107,7 +1229,7 @@ app.post("/api/ai/groups/:groupId/analyze-member", getUser, requireStudent,
         if (!membership.ok) return res.status(membership.status).json({ success: false, message: membership.message });
 
         const filename = String(req.query.filename || "upload.txt").split(/[\\/]/).pop();
-        if (!/\\.(pdf|docx|txt)$/i.test(filename)) {
+        if (!/\.(pdf|docx|txt)$/i.test(filename)) {
             return res.status(400).json({ success: false, message: "Upload a PDF, DOCX, or TXT file." });
         }
         if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
@@ -1120,6 +1242,7 @@ app.post("/api/ai/groups/:groupId/analyze-member", getUser, requireStudent,
         try {
             const form = new FormData();
             form.append("file", new Blob([req.body]), filename);
+            form.append("course", String(req.user.course || "Unspecified"));
             const analyzed = await callAIService("/analyze-member", { method: "POST", body: form });
             const profile = analyzed.member_profile;
             const { error } = await supabase.from("ai_member_profiles").upsert({
@@ -1154,7 +1277,7 @@ app.get("/api/ai/groups/:groupId/profiles", getUser, requireStudent, async (req,
     })) });
 });
 
-app.post("/api/ai/groups/:groupId/generate-titles", getUser, requireStudent, async (req, res) => {
+app.post("/api/ai/groups/:groupId/generate-titles", getUser, requireStudent, requireAIAvailable, async (req, res) => {
     const groupId = Number(req.params.groupId);
     const membership = await verifyGroupMembership(groupId, Number(req.user.user_id));
     if (!membership.ok) return res.status(membership.status).json({ success: false, message: membership.message });
