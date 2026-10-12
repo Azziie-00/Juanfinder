@@ -116,9 +116,21 @@ a { text-decoration: none; color: inherit; }
 .cal-day.today { background: var(--navy-light); color: #fff; font-weight: 700; }
 .cal-day.empty { pointer-events: none; }
 
-/* Keep the lower dashboard row content-sized so the AI panel aligns with the left cards. */
-.dashboard-lower-row { flex: 0 0 auto !important; min-height: auto !important; align-items: stretch; }
+/* The left dashboard stack defines row height; JUAN-AI fills that same row without stretching it. */
+.dashboard-lower-row { position: relative; flex: 0 0 auto !important; min-height: auto !important; align-items: stretch; }
 .dashboard-lower-row > [class*="col-"] { min-width: 0; }
+
+@media (min-width: 992px) {
+  .dashboard-lower-row > .col-lg-4 { position: relative; min-height: 0; }
+  .dashboard-lower-row > .col-lg-4 > .ai-panel {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+  }
+}
 
 /*Announce*/
 .announce-card { background: var(--blue-card); border-radius: 14px; overflow: hidden; flex-shrink: 0; }
@@ -247,7 +259,14 @@ a { text-decoration: none; color: inherit; }
 
 /* On tablet/mobile the dashboard columns stack, so give JUAN-AI its own usable height. */
 @media (max-width: 991.98px) {
-  .ai-panel { height: min(760px, calc(100vh - 110px)); min-height: min(380px, calc(100vh - 110px)); max-height: none; }
+  .dashboard-lower-row > .col-lg-4 { position: static; }
+  .dashboard-lower-row > .col-lg-4 > .ai-panel {
+    position: relative;
+    inset: auto;
+    height: min(760px, calc(100vh - 110px));
+    min-height: min(380px, calc(100vh - 110px));
+    max-height: none;
+  }
 }
 
 /* Short desktop viewports keep the same row alignment while limiting recommendation sections. */
