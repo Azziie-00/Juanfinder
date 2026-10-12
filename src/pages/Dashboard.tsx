@@ -370,7 +370,7 @@ export default function Dashboard() {
           <Col xs={12} md={4}><Calendar /></Col>
         </Row>
 
-        <Row className="g-3 mt-0" style={{ flex:1, minHeight:0 }}>
+        <Row className="g-3 mt-0 dashboard-lower-row">
           <Col xs={12} lg={8} className="d-flex flex-column gap-3">
             <div className="announce-card">
               <div className="announce-head">
