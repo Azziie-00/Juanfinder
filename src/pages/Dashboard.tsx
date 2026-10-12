@@ -379,7 +379,7 @@ export default function Dashboard() {
               </div>
               <div className="announce-body"><div className="announce-msg">{ADVISER.announcement}</div></div>
             </div>
-            <div className="groups-card flex-grow-1">
+            <div className="groups-card">
               <div className="groups-title">Recommended groups <span className="ai-badge">AI-powered</span></div>
               {groupError && <div role="alert" className="text-danger px-3">{groupError}</div>}
               <div className="groups-scroll">
