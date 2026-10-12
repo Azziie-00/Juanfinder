@@ -412,7 +412,7 @@ export default function Dashboard() {
           </Col>
 
           <Col xs={12} lg={4}>
-            <div className="ai-panel" style={{ minHeight: 380 }}>
+            <div className="ai-panel">
               <div className="ai-panel-title">JUAN-AI Assistant</div>
               <div className="ai-recs">
                 <div className="ai-recs-label">Group recommendations</div>
