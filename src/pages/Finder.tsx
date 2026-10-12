@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import { Modal, Button, Form, Table, Badge, Dropdown } from 'react-bootstrap';
 import Layout from '../components/Layout';
 import { getInitials } from '../data/datas';
@@ -46,6 +46,7 @@ export default function Finder() {
   const [createDone, setCreateDone]       = useState(false);
   const [form, setForm]                   = useState<CreateForm>({ name:'', course:user?.course || '', specialty:'', max:'4', desc:'' });
   const [formError, setFormError]         = useState('');
+  const [creatingGroup, setCreatingGroup] = useState(false);
 
   useEffect(() => {
     if (!toast) return;
@@ -98,10 +99,9 @@ export default function Finder() {
 
   // ── Data ──
   const getRows = (): RowItem[] => {
-    let list: RowItem[];
-    if (filter === 'STUDENT') list = students.map(student => ({ ...student, _type:'student' as const }));
-    else list = groups.map(g => ({ ...g, _type:'group' as const }));
-    return list;
+    const studentRows = filter === 'GROUP' ? [] : students.map(student => ({ ...student, _type:'student' as const }));
+    const groupRows = filter === 'STUDENT' ? [] : groups.map(group => ({ ...group, _type:'group' as const }));
+    return [...studentRows, ...groupRows];
   };
   const rows  = getRows();
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -121,33 +121,24 @@ export default function Finder() {
   const confirmJoin = async () => {
     const g = roleModal.group!;
     if (!user) return;
-    const response = await fetch(`${API}/groups/${g.id}/join`, {
-      method: 'POST',
-      headers: authHeaders(user, viewRole),
-    });
-    const data = await response.json() as { success?: boolean; pending?: boolean; message?: string };
-    if (!response.ok) {
-      setToast(data.message || 'Unable to join the group.');
-      return;
+    try {
+      const response = await fetch(`${API}/groups/${g.id}/join`, {
+        method: 'POST',
+        headers: authHeaders(user, viewRole),
+      });
+      const data = await response.json() as { success?: boolean; pending?: boolean; message?: string };
+      if (!response.ok) {
+        setToast(data.message || 'Unable to join the group.');
+        return;
+      }
+      setGroups(gs => gs.map(gr => gr.id === g.id ? { ...gr, _joined: true } : gr));
+      setHasGroup(true);
+      setRoleModal({ open:false, group:null, skills:[] });
+      setDetailGroup(null);
+      setToast(`Join request sent for "${g.name}".`);
+    } catch (requestError) {
+      setToast(requestError instanceof Error ? requestError.message : 'Unable to join the group.');
     }
-    setGroups(gs => gs.map(gr => gr.id === g.id
-      ? { ...gr, _joined: true }
-      : gr));
-    const myG = {
-      id: g.id, name: g.name, desc: g.desc, specialty: g.specialty,
-      maxMembers: g.maxMembers,
-      skills: g.specialty?.split('/').map(s => s.trim()) ?? [selectedRole ?? 'Developer'],
-      pending: [{ id: g.id, name: user.name, course: g.course, userId: Number(user.id) }],
-      members: (g.memberNames || []).map((memberName, index) => ({ name: memberName, role: (index === 0 ? 'owner' : 'member') as 'owner' | 'member' })),
-      ownerId: g.ownerId,
-      status: g.status,
-    };
-    setHasGroup(true);
-    sessionStorage.setItem('jf_mygroup', JSON.stringify(myG));
-    window.dispatchEvent(new Event('jf-mygroup-updated'));
-    setRoleModal({ open:false, group:null, skills:[] });
-    setDetailGroup(null);
-    setToast(`Join request sent for "${g.name}".`);
   };
 
   // ── Create group ──
@@ -161,31 +152,40 @@ export default function Finder() {
     if (!form.course)    { setFormError('Your account needs a course assigned before you create a group.'); return; }
     if (!form.specialty) { setFormError('Please enter a Specialty / Focus.'); return; }
     const max = parseInt(form.max);
-    const response = await fetch(`${API}/groups`, {
-      method: 'POST',
-      headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ name: form.name, course: form.course, specialty: form.specialty, maxMembers: max, description: form.desc }),
-    });
-    const data = await response.json() as { success?: boolean; message?: string; group?: { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; OwnerID: number; Status: string; FinalizedAt: string | null; MaxMembers: number; MemberCount: number } };
-    if (!response.ok || !data.group) { setFormError(data.message || 'Unable to create group.'); return; }
-    const created = data.group;
-    const newG: GroupData = {
-      id: String(created.GroupID), name: created.GroupName, course: created.Course,
-      specialty: created.Specialty, maxMembers: created.MaxMembers, members: created.MemberCount,
-      desc: created.Description, ownerId: created.OwnerID, status: created.Status,
-      availability: `${Math.max(0, created.MaxMembers - created.MemberCount)} / ${created.MaxMembers}`, _joined: true,
-      memberNames: [user.name],
-      _memberNames: [user.name],
-    };
-    setGroups(gs => [newG, ...gs]);
-    setHasGroup(true);
-    sessionStorage.setItem('jf_mygroup', JSON.stringify({
-      id: newG.id, name: newG.name, desc: newG.desc, specialty: newG.specialty,
-      maxMembers: max, skills: form.specialty.split('/').map(s => s.trim()),
-      pending: [], members: [{ name: user?.name ?? 'You', role: 'owner' }],
-      ownerId: Number(user.id), status: created.Status, finalizedAt: created.FinalizedAt || null,
-    }));
-    setCreateDone(true);
+    if (creatingGroup) return;
+    setCreatingGroup(true);
+    try {
+      const response = await fetch(`${API}/groups`, {
+        method: 'POST',
+        headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ name: form.name, course: form.course, specialty: form.specialty, maxMembers: max, description: form.desc }),
+      });
+      const data = await response.json() as { success?: boolean; message?: string; group?: { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; OwnerID: number; Status: string; FinalizedAt: string | null; MaxMembers: number; MemberCount: number } };
+      if (!response.ok || !data.group) { setFormError(data.message || 'Unable to create group.'); return; }
+      const created = data.group;
+      const newG: GroupData = {
+        id: String(created.GroupID), name: created.GroupName, course: created.Course,
+        specialty: created.Specialty, maxMembers: created.MaxMembers, members: created.MemberCount,
+        desc: created.Description, ownerId: created.OwnerID, status: created.Status,
+        availability: `${Math.max(0, created.MaxMembers - created.MemberCount)} / ${created.MaxMembers}`, _joined: true,
+        memberNames: [user.name],
+        _memberNames: [user.name],
+      };
+      setGroups(gs => [newG, ...gs.filter(group => group.id !== newG.id)]);
+      setHasGroup(true);
+      sessionStorage.setItem('jf_mygroup', JSON.stringify({
+        id: newG.id, name: newG.name, desc: newG.desc, specialty: newG.specialty,
+        maxMembers: max, skills: form.specialty.split('/').map(s => s.trim()),
+        pending: [], members: [{ name: user.name, role: 'owner' }],
+        ownerId: Number(user.id), status: created.Status, finalizedAt: created.FinalizedAt || null,
+      }));
+      window.dispatchEvent(new Event('jf-mygroup-updated'));
+      setCreateDone(true);
+    } catch (requestError) {
+      setFormError(requestError instanceof Error ? requestError.message : 'Unable to create group.');
+    } finally {
+      setCreatingGroup(false);
+    }
   };
 
   const closeCreate = () => {
@@ -197,7 +197,7 @@ export default function Finder() {
     ? ['NAME','SPECIALTY','MEMBERS','COURSE','AVAILABILITY','STATUS']
     : filter === 'STUDENT'
     ? ['NAME','SPECIALTY','COURSE','GROUP','AVAILABILITY']
-    : ['NAME','SPECIALTY','GROUP / MEMBERS','COURSE','AVAILABILITY'];
+    : ['NAME','SPECIALTY','COURSE','GROUP / MEMBERS','AVAILABILITY'];
 
   return (
     <Layout>
@@ -255,35 +255,45 @@ export default function Finder() {
                 <tr><td colSpan={cols.length} className="text-center py-5" style={{ color:'rgba(26,42,74,.4)', fontStyle:'italic' }}>
                   {filter === 'STUDENT' && studentsLoading ? 'Loading students from database...' : filter === 'STUDENT' && studentsError ? studentsError : filter === 'STUDENT' ? 'No student accounts found in the database.' : 'No records found.'}
                 </td></tr>
-              ) : slice.map(row => {
+              ) : slice.map((row, rowIndex) => {
+                const sectionHeader = filter === 'ALL' && (rowIndex === 0 || slice[rowIndex - 1]._type !== row._type)
+                  ? <tr key={`section-${row._type}-${row.id}`} className="finder-section-row"><th colSpan={cols.length}>{row._type === 'student' ? 'Students' : 'Groups'}</th></tr>
+                  : null;
                 if (row._type === 'student') {
                   const s = row as StudentData & { _type: 'student' };
                   return (
+                    <Fragment key={s.id}>
+                    {sectionHeader}
                     <tr key={s.id} onClick={() => setDetailStudent(s)} style={{ cursor:'pointer' }}>
-                      <td><span className="finder-name-link">{s.name}</span></td>
+                      <td><span className="finder-name-link">{s.name}</span>{filter === 'ALL' && <Badge bg="" className="ms-2 finder-type-badge student">STUDENT</Badge>}</td>
                       <td>{s.specialty}</td>
                       <td>{s.course}</td>
                       <td>{s.group === '--' ? <span style={{ opacity:.4 }}>--</span> : s.group}</td>
                       <td><span className="student-availability" aria-label={s.availability === '1' ? 'Available to join a group' : 'Already in a group'}>{s.availability}</span></td>
                     </tr>
+                    </Fragment>
                   );
                 }
                 const g = row as GroupData & { _type: 'group' };
                 const isFull = g.status === 'Full';
                 return (
+                  <Fragment key={g.id}>
+                  {sectionHeader}
                   <tr key={g.id} onClick={() => setDetailGroup(g)} style={{ cursor:'pointer' }}>
                     <td>
                       <span className="finder-name-link">{g.name}</span>
-                      {filter === 'ALL' && <Badge bg="" className="ms-2" style={{ background:'rgba(46,109,164,.2)', color:'#2e6da4', fontSize:9 }}>GROUP</Badge>}
+                      {filter === 'ALL' && <Badge bg="" className="ms-2 finder-type-badge group">GROUP</Badge>}
                     </td>
                     <td>{g.specialty}</td>
-                    <td>{g.members}/{g.maxMembers}</td>
-                    <td>{g.course}</td>
+                    <td>{filter === 'ALL' ? g.course : `${g.members}/${g.maxMembers}`}</td>
+                    {filter === 'ALL' && <td>{g.members}/{g.maxMembers}</td>}
+                    {filter === 'GROUP' && <td>{g.course}</td>}
                     <td><span className={`avail-badge${isFull?' full':''}`} aria-label={`${Math.max(0, g.maxMembers - g.members)} open slots out of ${g.maxMembers}`}>
                       {Math.max(0, g.maxMembers - g.members)} / {g.maxMembers}
                     </span></td>
                     {filter === 'GROUP' && <td><span className={`status-pill ${g.status.toLowerCase()}`}>{g.status}</span></td>}
                   </tr>
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -475,7 +485,7 @@ export default function Finder() {
               </Form>
             </Modal.Body>
             <Modal.Footer className="gap-2">
-              <Button className="flex-grow-1" style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:700, borderRadius:10 }} onClick={() => void handleCreate()}>Create Group</Button>
+              <Button className="flex-grow-1" disabled={creatingGroup} style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:700, borderRadius:10 }} onClick={() => void handleCreate()}>{creatingGroup ? 'Creating…' : 'Create Group'}</Button>
               <Button className="flex-grow-1" style={{ background:'rgba(255,255,255,.08)', border:'none', color:'rgba(255,255,255,.55)', fontWeight:700, borderRadius:10 }} onClick={closeCreate}>Cancel</Button>
             </Modal.Footer>
           </>

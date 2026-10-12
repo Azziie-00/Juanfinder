@@ -1,30 +1,33 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Modal, Button, Form } from 'react-bootstrap';
+import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
-import { API_BASE_URL } from '../data/api';
+import { API_BASE_URL, ApiResponseError, readApiResponse } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
 import { getInitials } from '../data/datas';
 import type { MyGroupData, GroupMember, PendingRequest } from '../data/datas';
 import '../styles/mygroup.css';
-import CapstoneAI from '../components/CapstoneAI';
 
 const API = API_BASE_URL;
+const LOAD_GROUP_ERROR = 'Unable to load your group information. Please try again.';
+const displayError = (error: unknown, fallback: string) => error instanceof ApiResponseError ? error.message : fallback;
 
 interface EditForm { name: string; desc: string; skills: string; max: string; }
 
 export default function MyGroup() {
   const { user, viewRole } = useAuth();
-  const [group, setGroup]             = useState<MyGroupData | null>(() => {
-    const saved = sessionStorage.getItem('jf_mygroup');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const navigate = useNavigate();
+  const [group, setGroup] = useState<MyGroupData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen]       = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [membershipStatus, setMembershipStatus] = useState<'Member' | 'Pending'>('Member');
   const [editForm, setEditForm]       = useState<EditForm>({ name:'', desc:'', skills:'', max:'4' });
   const [editError, setEditError]     = useState('');
   const [actionError, setActionError] = useState('');
+  const [finalizing, setFinalizing] = useState(false);
+  const [adviserApplication, setAdviserApplication] = useState<{ Status: string; AdviserName: string } | null>(null);
   const isFinalized = Boolean(group?.finalizedAt);
 
   const save = (updated: MyGroupData) => {
@@ -33,16 +36,25 @@ export default function MyGroup() {
     window.dispatchEvent(new Event('jf-mygroup-updated'));
   };
 
-  useEffect(() => {
-    if (!user) return;
-    const loadGroup = async () => {
+  const loadGroup = useCallback(async () => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setActionError('');
+    try {
       const response = await fetch(`${API}/my-group`, { headers: authHeaders(user, viewRole) });
-      if (!response.ok) {
-        setActionError('Unable to load your group information.');
+      const data = await readApiResponse<{ group: { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; OwnerID: number; Status: string; FinalizedAt: string | null; MaxMembers: number; MembershipStatus: string; members: { UserID: number; Name: string; Role: string }[]; pending: { RequestID: number; UserID: number; Name: string; UserCode: string; ExpiresAt: string }[] } | null }>(response, LOAD_GROUP_ERROR);
+      if (!data || !Object.prototype.hasOwnProperty.call(data, 'group')) throw new ApiResponseError(LOAD_GROUP_ERROR);
+      if (!data.group) {
+        setGroup(null);
+        setMembershipStatus('Member');
+        setAdviserApplication(null);
+        sessionStorage.removeItem('jf_mygroup');
+        window.dispatchEvent(new Event('jf-mygroup-updated'));
         return;
       }
-      const data = await response.json() as { group: { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; OwnerID: number; Status: string; FinalizedAt: string | null; MaxMembers: number; MembershipStatus: string; members: { UserID: number; Name: string; Role: string }[]; pending: { RequestID: number; UserID: number; Name: string; UserCode: string; ExpiresAt: string }[] } | null };
-      if (!data.group) { setGroup(null); sessionStorage.removeItem('jf_mygroup'); return; }
       const remote = data.group;
       setMembershipStatus(remote.MembershipStatus === 'Pending' ? 'Pending' : 'Member');
       const nextGroup: MyGroupData = {
@@ -54,9 +66,30 @@ export default function MyGroup() {
         ownerId: remote.OwnerID, status: remote.Status, finalizedAt: remote.FinalizedAt,
       };
       save(nextGroup);
-    };
-    void loadGroup().catch(() => setActionError('Unable to load your group information.'));
+      if (remote.MembershipStatus === 'Member') {
+        const applicationResponse = await fetch(`${API}/groups/${encodeURIComponent(nextGroup.id)}/adviser-application`, { headers: authHeaders(user, viewRole) });
+        try {
+          const applicationData = await readApiResponse<{ application?: { Status: string; AdviserName: string } | null }>(applicationResponse, 'Application status lookup failed.');
+          setAdviserApplication(applicationData.application || null);
+        } catch (error) {
+          if (import.meta.env.DEV) console.error('My Group adviser status request failed.', error);
+          setAdviserApplication(null);
+        }
+      } else {
+        setAdviserApplication(null);
+      }
+    } catch (requestError) {
+      if (import.meta.env.DEV && !(requestError instanceof ApiResponseError)) console.error('Unable to load group information.', requestError);
+      setActionError(displayError(requestError, LOAD_GROUP_ERROR));
+    } finally {
+      setLoading(false);
+    }
   }, [user, viewRole]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadGroup(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadGroup]);
 
   const isOwner = group?.ownerId === Number(user?.id);
 
@@ -72,56 +105,93 @@ export default function MyGroup() {
     if (!editForm.name.trim()) { setEditError('Group name is required.'); return; }
     const max = Number.parseInt(editForm.max, 10);
     if (max < group.members.length) { setEditError(`Max can't be less than current member count (${group.members.length}).`); return; }
-    const response = await fetch(`${API}/groups/${group.id}`, {
-      method: 'PATCH',
-      headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ name: editForm.name, description: editForm.desc, specialty: editForm.skills, maxMembers: max }),
-    });
-    const data = await response.json();
-    if (!response.ok) { setEditError(data.message || 'Unable to save group changes.'); return; }
-    save({ ...group, name:editForm.name, desc:editForm.desc, maxMembers:max, skills:editForm.skills.split(',').map(s=>s.trim()).filter(Boolean) });
-    setEditOpen(false);
+    try {
+      const response = await fetch(`${API}/groups/${group.id}`, {
+        method: 'PATCH',
+        headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ name: editForm.name, description: editForm.desc, specialty: editForm.skills, maxMembers: max }),
+      });
+      await readApiResponse(response, 'Unable to save group changes.');
+      save({ ...group, name:editForm.name, desc:editForm.desc, maxMembers:max, skills:editForm.skills.split(',').map(s=>s.trim()).filter(Boolean) });
+      setEditOpen(false);
+    } catch (error) {
+      if (import.meta.env.DEV && !(error instanceof ApiResponseError)) console.error('Unable to save group changes.', error);
+      setEditError(displayError(error, 'Unable to save group changes. Please try again.'));
+    }
   };
 
   const finalizeGroup = async () => {
-    if (!group || !window.confirm('Finalize this group? Membership will be permanently locked.')) return;
-    const response = await fetch(`${API}/groups/${group.id}/finalize`, { method: 'POST', headers: authHeaders(user, viewRole) });
-    const data = await response.json();
-    if (!response.ok) { setActionError(data.message || 'Unable to finalize this group.'); return; }
-    save({ ...group, finalizedAt: new Date().toISOString(), status: 'Finalized', pending: [] });
+    if (!group || finalizing || !window.confirm('Are you sure you want to finalize this group? Once finalized, group details and membership cannot be changed by students.')) return;
+    setFinalizing(true);
+    setActionError('');
+    try {
+      const response = await fetch(`${API}/groups/${group.id}/finalize`, { method: 'POST', headers: authHeaders(user, viewRole) });
+      await readApiResponse(response, 'Unable to finalize this group. Please try again.');
+      await loadGroup();
+    } catch (requestError) {
+      if (import.meta.env.DEV && !(requestError instanceof ApiResponseError)) console.error('Unable to finalize group.', requestError);
+      setActionError(displayError(requestError, 'Unable to finalize this group. Please try again.'));
+    } finally {
+      setFinalizing(false);
+    }
   };
 
   const deleteGroup = async () => {
     if (!group || !window.confirm(`Delete "${group.name}"? This removes the group and its membership records.`)) return;
-    const response = await fetch(`${API}/groups/${group.id}`, { method: 'DELETE', headers: authHeaders(user, viewRole) });
-    const data = await response.json();
-    if (!response.ok) { setActionError(data.message || 'Unable to delete this group.'); return; }
-    setGroup(null);
-    sessionStorage.removeItem('jf_mygroup');
-    window.dispatchEvent(new Event('jf-mygroup-updated'));
+    try {
+      const response = await fetch(`${API}/groups/${group.id}`, { method: 'DELETE', headers: authHeaders(user, viewRole) });
+      await readApiResponse(response, 'Unable to delete this group. Please try again.');
+      setGroup(null);
+      sessionStorage.removeItem('jf_mygroup');
+      window.dispatchEvent(new Event('jf-mygroup-updated'));
+    } catch (error) {
+      if (import.meta.env.DEV && !(error instanceof ApiResponseError)) console.error('Unable to delete group.', error);
+      setActionError(displayError(error, 'Unable to delete this group. Please try again.'));
+    }
   };
 
   const approvePending = async (req: PendingRequest) => {
     if (!group) return;
     if (group.members.length >= group.maxMembers) { alert('Group is full.'); return; }
-    const response = await fetch(`${API}/groups/${group.id}/requests/${req.id}/approve`, { method: 'POST', headers: authHeaders(user, viewRole) });
-    if (!response.ok) return;
-    const newMember: GroupMember = { name:req.name, role:'member' };
-    save({ ...group, members:[...group.members, newMember], pending:group.pending.filter(p=>p.id!==req.id) });
+    try {
+      const response = await fetch(`${API}/groups/${group.id}/requests/${req.id}/approve`, { method: 'POST', headers: authHeaders(user, viewRole) });
+      await readApiResponse(response, 'Unable to approve this join request. Please try again.');
+      const newMember: GroupMember = { name:req.name, role:'member' };
+      save({ ...group, members:[...group.members, newMember], pending:group.pending.filter(p=>p.id!==req.id) });
+    } catch (error) {
+      if (import.meta.env.DEV && !(error instanceof ApiResponseError)) console.error('Unable to approve join request.', error);
+      setActionError(displayError(error, 'Unable to approve this join request. Please try again.'));
+    }
   };
 
   const declinePending = async (req: PendingRequest) => {
     if (!group) return;
-    const response = await fetch(`${API}/groups/${group.id}/requests/${req.id}`, { method: 'DELETE', headers: authHeaders(user, viewRole) });
-    if (response.ok) save({ ...group, pending:group.pending.filter(p=>p.id!==req.id) });
+    try {
+      const response = await fetch(`${API}/groups/${group.id}/requests/${req.id}`, { method: 'DELETE', headers: authHeaders(user, viewRole) });
+      await readApiResponse(response, 'Unable to decline this join request. Please try again.');
+      save({ ...group, pending:group.pending.filter(p=>p.id!==req.id) });
+    } catch (error) {
+      if (import.meta.env.DEV && !(error instanceof ApiResponseError)) console.error('Unable to decline join request.', error);
+      setActionError(displayError(error, 'Unable to decline this join request. Please try again.'));
+    }
   };
 
-  if (!group) return (
+  if (loading) return (
     <Layout>
       <div className="d-flex flex-column align-items-center justify-content-center flex-grow-1 gap-2" style={{ background:'var(--bg-page)', color:'rgba(26,42,74,.4)' }}>
-        <i className="ti ti-users-group" style={{ fontSize:40, opacity:.35 }}></i>
-        <strong>No group yet</strong>
-        <span>Create a group from Finder to see it here.</span>
+        <span>Loading your group…</span>
+      </div>
+    </Layout>
+  );
+  if (!group) return (
+    <Layout>
+      <div className="d-flex flex-column align-items-center justify-content-center flex-grow-1 gap-2 p-4 text-center" style={{ background:'var(--bg-page)', color:'rgba(26,42,74,.65)' }}>
+        {actionError && <div className="alert alert-danger py-2 mb-2" role="alert">{actionError}</div>}
+        <i className="ti ti-users-group" style={{ fontSize:40, opacity:.45 }}></i>
+        <strong>{actionError ? 'Unable to load your group information.' : 'You are not currently a member of any group.'}</strong>
+        <span>{actionError ? 'Try loading your group again.' : 'Create a group or join an existing group to get started.'}</span>
+        {actionError && <button className="mg-btn back mt-2" onClick={() => void loadGroup()}>RETRY</button>}
+        <button className="mg-btn edit mt-2" onClick={() => navigate('/finder')}><i className="ti ti-search"></i> FIND OR CREATE A GROUP</button>
       </div>
     </Layout>
   );
@@ -145,6 +215,8 @@ export default function MyGroup() {
               <div className="mg-owner-avatar">{getInitials(group.members[0]?.name || 'JD')}</div>
             </div>
             <div className="mg-group-name-box">{group.name.toUpperCase()}</div>
+            <div className="mg-member-count">{group.members.length}/{group.maxMembers} MEMBERS</div>
+            <div className="mg-leader-name">Leader: {group.members.find(member => member.role === 'owner')?.name || 'Not assigned'}</div>
             {membershipStatus === 'Pending' && (
               <div className="text-center mt-2" style={{ color:'var(--amber)', fontSize:12, fontWeight:700 }}>PENDING APPROVAL</div>
             )}
@@ -160,7 +232,7 @@ export default function MyGroup() {
                   </div>
                 ))}
               </div>
-              {isOwner && (group.pending || []).length > 0 && (
+              {isOwner && !isFinalized && (group.pending || []).length > 0 && (
                 <button className="mg-pending-badge" onClick={() => setPendingOpen(true)}>
                   <i className="ti ti-clock"></i>
                   <span>{group.pending.length} Pending</span>
@@ -200,9 +272,14 @@ export default function MyGroup() {
               )}
               {isOwner && membershipStatus === 'Member' && !isFinalized && (
                 <>
-                  <button className="mg-btn edit" onClick={() => void finalizeGroup()}><i className="ti ti-lock"></i> FINALIZE</button>
+                  <button className="mg-btn edit" disabled={finalizing} onClick={() => void finalizeGroup()}><i className="ti ti-lock"></i> {finalizing ? 'Finalizing…' : 'Finalize Group'}</button>
                   <button className="mg-btn edit" onClick={() => void deleteGroup()}><i className="ti ti-trash"></i> DELETE GROUP</button>
                 </>
+              )}
+              {isFinalized && membershipStatus === 'Member' && (
+                adviserApplication && adviserApplication.Status !== 'Rejected'
+                  ? <span className="mg-application-status">Adviser application: {adviserApplication.Status}{adviserApplication.AdviserName ? ` — ${adviserApplication.AdviserName}` : ''}</span>
+                : isOwner && <button className="mg-btn edit" onClick={() => navigate(`/adviser?groupId=${encodeURIComponent(group.id)}`)}><i className="ti ti-user-plus"></i> {adviserApplication ? 'Apply Again' : 'Apply for Adviser'}</button>
               )}
               <button className="mg-btn back" onClick={() => window.history.back()}>
                 <i className="ti ti-arrow-left"></i> BACK
@@ -211,7 +288,6 @@ export default function MyGroup() {
           </div>
 
         </div>
-        {membershipStatus === 'Member' && <CapstoneAI groupId={group.id} />}
       </div>
 
       {/*Edit Modal*/}

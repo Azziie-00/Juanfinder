@@ -31,6 +31,9 @@
   text-transform: uppercase; letter-spacing: .8px; border-radius: 30px;
   padding: 11px 26px; text-align: center; max-width: 90%; margin-bottom: 14px;
 }
+.mg-member-count { color:var(--navy); font-size:12px; font-weight:800; }
+.mg-leader-name { color:rgba(26,42,74,.7); font-size:12px; font-weight:600; text-align:center; padding:0 12px 8px; }
+.mg-application-status { align-self:center; color:var(--navy); font-size:12px; font-weight:800; text-align:center; }
 .mg-members-section { width: 100%; padding: 0 18px 18px; display: flex; flex-direction: column; align-items: center; gap: 9px; flex: 1; overflow: hidden; }
 .mg-members-label   { font-size: 14px; font-weight: 800; color: var(--navy); text-transform: uppercase; letter-spacing: .5px; }
 .mg-members-list    { display: flex; flex-direction: column; gap: 8px; width: 100%; overflow-y: auto; max-height: 200px; }

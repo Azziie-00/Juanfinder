@@ -73,9 +73,12 @@ const RPC_MESSAGES = {
     "Group not found": { status: 404, message: "Group not found." },
     "Only the group owner": { status: 403, message: "Only the group owner can perform this action." },
     "Only active students": { status: 403, message: "Only active students can be added." },
+    "course": { status: 409, message: "Students can only join groups in their own course." },
+    "finalized": { status: 409, message: "This group is finalized and membership is locked." },
 };
 
 const USER_ID_PATTERN = /^\d{1,11}$/;
+const normalizeCourse = (value) => String(value ?? "").trim().toLocaleLowerCase();
 const getPasswordRequirements = (password) => {
     const missing = [];
     if (!/[A-Z]/.test(String(password))) missing.push('one uppercase letter');
@@ -426,10 +429,44 @@ app.delete("/api/portfolio/:id", getUser, async (req, res) => {
     res.json({ success: true });
 });
 
-app.get("/api/advisers", getUser, async (_req, res) => {
-    const { data, error } = await supabase.from("users").select("user_id,user_code,username,name,bio,gender,requirements").eq("role", "adviser").eq("is_active", true).order("name");
+app.get("/api/advisers", getUser, async (req, res) => {
+    let adviserQuery = supabase.from("users").select("user_id,user_code,username,name,bio,gender,requirements,course,expires_at").eq("role", "adviser").eq("is_active", true).order("name");
+    if (req.effectiveRole === "student") {
+        const course = String(req.user.course ?? "").trim();
+        if (!course || normalizeCourse(course) === "unspecified") return res.json([]);
+        adviserQuery = adviserQuery.ilike("course", course);
+    }
+    const { data, error } = await adviserQuery;
     if (error) return res.status(500).json({ success: false, message: "Unable to load advisers." });
-    res.json(data.map((user) => ({ UserID: Number(user.user_id), UserCode: user.user_code, Username: user.username, Name: user.name, Bio: user.bio, Gender: user.gender, Requirements: user.requirements })));
+    const eligibleAdvisers = data.filter((user) => !user.expires_at || new Date(user.expires_at) > new Date());
+    const adviserIds = eligibleAdvisers.map((user) => Number(user.user_id));
+    const assignedStudentsResult = adviserIds.length
+        ? await supabase.from("users").select("user_id,adviser_id").eq("role", "student").in("adviser_id", adviserIds)
+        : { data: [], error: null };
+    if (assignedStudentsResult.error) return res.status(500).json({ success: false, message: "Unable to load adviser availability." });
+    const studentIds = assignedStudentsResult.data.map((student) => Number(student.user_id));
+    const membershipsResult = studentIds.length
+        ? await supabase.from("group_members").select("group_id,user_id").in("user_id", studentIds)
+        : { data: [], error: null };
+    if (membershipsResult.error) return res.status(500).json({ success: false, message: "Unable to load adviser availability." });
+    const groupCounts = new Map();
+    const studentsById = new Map(assignedStudentsResult.data.map((student) => [Number(student.user_id), Number(student.adviser_id)]));
+    for (const membership of membershipsResult.data) {
+        const adviserId = studentsById.get(Number(membership.user_id));
+        if (adviserId == null) continue;
+        const groups = groupCounts.get(adviserId) || new Set();
+        groups.add(Number(membership.group_id));
+        groupCounts.set(adviserId, groups);
+    }
+    res.json(eligibleAdvisers.map((user) => {
+        const assignedGroups = groupCounts.get(Number(user.user_id))?.size || 0;
+        return {
+            UserID: Number(user.user_id), UserCode: user.user_code, Username: user.username,
+            Name: user.name, Bio: user.bio, Gender: user.gender, Requirements: user.requirements,
+            Course: user.course, Availability: 10, AssignedGroups: assignedGroups,
+            HasCapacity: assignedGroups < 10,
+        };
+    }));
 });
 
 app.get("/api/students", getUser, async (req, res) => {
@@ -437,6 +474,11 @@ app.get("/api/students", getUser, async (req, res) => {
         .select("user_id,user_code,username,name,course,year_level,specialty,skills,adviser_id")
         .eq("role", "student").eq("is_active", true).order("name");
     if (req.effectiveRole === "adviser") studentQuery = studentQuery.eq("adviser_id", req.user.user_id);
+    if (req.effectiveRole === "student") {
+        const course = String(req.user.course ?? "").trim();
+        if (!course || normalizeCourse(course) === "unspecified") return res.json([]);
+        studentQuery = studentQuery.ilike("course", course);
+    }
     const [studentsResult, membershipsResult, groupsResult] = await Promise.all([
         studentQuery,
         supabase.from("group_members").select("user_id,group_id"),
@@ -567,7 +609,13 @@ app.get("/api/groups", getUser, async (req, res) => {
     const pendingSet = new Set(requestsResult.data.map((request) => `${request.group_id}:${request.user_id}`));
     const rows = groupsResult.data.filter((group) => {
         const members = membersByGroup.get(Number(group.group_id)) || [];
-        return group.status === "Open" || members.includes(Number(req.user.user_id)) || pendingSet.has(`${group.group_id}:${req.user.user_id}`);
+        const isVisibleToUser = req.effectiveRole !== "student"
+            || normalizeCourse(group.course) === normalizeCourse(req.user.course);
+        const isGroupListed = req.effectiveRole === "student"
+            || group.status === "Open"
+            || members.includes(Number(req.user.user_id))
+            || pendingSet.has(`${group.group_id}:${req.user.user_id}`);
+        return isVisibleToUser && isGroupListed;
     }).map((group) => {
         const memberIds = membersByGroup.get(Number(group.group_id)) || [];
         const orderedMemberIds = [...new Set([
@@ -587,6 +635,13 @@ app.get("/api/groups", getUser, async (req, res) => {
 app.post("/api/groups/:id/join", getUser, requireStudent, async (req, res) => {
     const groupId = Number(req.params.id);
     if (!Number.isInteger(groupId)) return res.status(400).json({ success: false, message: "A valid group is required." });
+    const { data: group, error: groupError } = await supabase.from("groups").select("course,finalized_at").eq("group_id", groupId).maybeSingle();
+    if (groupError) return res.status(500).json({ success: false, message: "Unable to verify group eligibility." });
+    if (!group) return res.status(404).json({ success: false, message: "Group not found." });
+    if (normalizeCourse(group.course) !== normalizeCourse(req.user.course)) {
+        return res.status(409).json({ success: false, message: "You can only join a group in your course." });
+    }
+    if (group.finalized_at) return res.status(409).json({ success: false, message: "This group is finalized and membership is locked." });
     const { error } = await supabase.rpc("request_to_join_group", { p_group_id: groupId, p_user_id: req.user.user_id, p_allow_superadmin: req.effectiveRole === "student" && req.user.role === "superadmin" && process.env.NODE_ENV !== "production" });
     if (error) return rpcError(res, error, RPC_MESSAGES);
     res.status(201).json({ success: true, pending: true });
@@ -630,7 +685,22 @@ app.get("/api/my-group", getUser, async (req, res) => {
 });
 
 app.post("/api/groups/:id/requests/:requestId/approve", getUser, requireStudent, async (req, res) => {
-    const { error } = await supabase.rpc("approve_group_request", { p_group_id: Number(req.params.id), p_request_id: Number(req.params.requestId), p_owner_id: req.user.user_id });
+    const groupId = Number(req.params.id);
+    const requestId = Number(req.params.requestId);
+    const [groupResult, requestResult] = await Promise.all([
+        supabase.from("groups").select("course,finalized_at,owner_id").eq("group_id", groupId).maybeSingle(),
+        supabase.from("group_join_requests").select("user_id").eq("group_id", groupId).eq("request_id", requestId).eq("status", "Pending").maybeSingle(),
+    ]);
+    if (groupResult.error || requestResult.error) return res.status(500).json({ success: false, message: "Unable to verify the join request." });
+    if (!groupResult.data || !requestResult.data) return res.status(404).json({ success: false, message: "Join request not found." });
+    if (Number(groupResult.data.owner_id) !== Number(req.user.user_id)) return res.status(403).json({ success: false, message: "Only the group owner can approve requests." });
+    if (groupResult.data.finalized_at) return res.status(409).json({ success: false, message: "This group is finalized and membership is locked." });
+    const { data: student, error: studentError } = await supabase.from("users").select("course").eq("user_id", requestResult.data.user_id).eq("role", "student").maybeSingle();
+    if (studentError) return res.status(500).json({ success: false, message: "Unable to verify student course." });
+    if (!student || normalizeCourse(student.course) !== normalizeCourse(groupResult.data.course)) {
+        return res.status(409).json({ success: false, message: "Students can only join groups in their own course." });
+    }
+    const { error } = await supabase.rpc("approve_group_request", { p_group_id: groupId, p_request_id: requestId, p_owner_id: req.user.user_id });
     if (error) return rpcError(res, error, RPC_MESSAGES);
     res.json({ success: true });
 });
@@ -662,6 +732,120 @@ app.post("/api/groups/:id/finalize", getUser, requireStudent, async (req, res) =
     res.json({ success: true });
 });
 
+app.get("/api/groups/:id/adviser-application", getUser, requireStudent, async (req, res) => {
+    const groupId = Number(req.params.id);
+    if (!Number.isSafeInteger(groupId) || groupId <= 0) return res.status(400).json({ success: false, message: "A valid group is required." });
+    const [groupResult, membershipResult] = await Promise.all([
+        supabase.from("groups").select("owner_id").eq("group_id", groupId).maybeSingle(),
+        supabase.from("group_members").select("user_id").eq("group_id", groupId).eq("user_id", req.user.user_id).maybeSingle(),
+    ]);
+    if (groupResult.error || membershipResult.error) {
+        console.error("Unable to verify adviser application access.", groupResult.error || membershipResult.error);
+        return res.status(500).json({ success: false, message: "Unable to verify group access." });
+    }
+    if (!groupResult.data) return res.status(404).json({ success: false, message: "Group not found." });
+    if (Number(groupResult.data.owner_id) !== Number(req.user.user_id) && !membershipResult.data) {
+        return res.status(403).json({ success: false, message: "Only group members can view this application." });
+    }
+    const { data: application, error } = await supabase.from("group_adviser_applications")
+        .select("application_id,adviser_id,status").eq("group_id", groupId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) {
+        if (error.code === "42P01" || error.code === "PGRST205") {
+            console.error("Adviser application status lookup requires migration 002_group_adviser_applications.sql.", error);
+            return res.status(503).json({ success: false, message: "Adviser application status is temporarily unavailable." });
+        }
+        console.error("Unable to load adviser application status.", error);
+        return res.status(500).json({ success: false, message: "Unable to load adviser application status." });
+    }
+    if (!application) return res.json({ application: null });
+    const { data: adviser, error: adviserError } = await supabase.from("users")
+        .select("name").eq("user_id", application.adviser_id).maybeSingle();
+    if (adviserError) {
+        console.error("Unable to load adviser application details.", adviserError);
+        return res.status(500).json({ success: false, message: "Unable to load adviser application details." });
+    }
+    res.json({ application: { ApplicationID: Number(application.application_id), AdviserID: Number(application.adviser_id), AdviserName: adviser?.name || "", Status: application.status } });
+});
+
+app.post("/api/groups/:id/adviser-applications", getUser, requireStudent, async (req, res) => {
+    const groupId = Number(req.params.id);
+    const adviserId = Number(req.body.adviserId);
+    if (!Number.isSafeInteger(groupId) || groupId <= 0 || !Number.isSafeInteger(adviserId) || adviserId <= 0) {
+        return res.status(400).json({ success: false, message: "A valid group and adviser are required." });
+    }
+    const { data, error } = await supabase.rpc("submit_group_adviser_application", {
+        p_group_id: groupId, p_applicant_id: req.user.user_id, p_adviser_id: adviserId,
+    });
+    if (error) {
+        if (error.code === "PGRST202") return res.status(503).json({ success: false, message: "Adviser applications are not configured. Apply the 002_group_adviser_applications.sql migration." });
+        const message = error.message || "";
+        const conflict = message.includes("already has an active") || message.includes("unavailable") || message.includes("finalized") || message.includes("eligible") || message.includes("course");
+        const status = message.includes("Only the group leader") ? 403 : message.includes("not found") ? 404 : conflict ? 409 : 500;
+        return res.status(status).json({ success: false, message: message.includes("already has an active") ? "This group already has an active adviser application." : message });
+    }
+    const { data: adviser, error: adviserError } = await supabase.from("users").select("name").eq("user_id", adviserId).maybeSingle();
+    if (adviserError) return res.status(500).json({ success: false, message: "Application was saved, but adviser details could not be loaded." });
+    res.status(201).json({ success: true, application: { ApplicationID: Number(data), AdviserID: adviserId, AdviserName: adviser?.name || "", Status: "Pending" } });
+});
+
+app.get("/api/adviser/applications", getUser, async (req, res) => {
+    if (req.effectiveRole !== "adviser") return res.status(403).json({ success: false, message: "Only advisers can view adviser applications." });
+    const { data: applications, error } = await supabase.from("group_adviser_applications")
+        .select("application_id,group_id,applicant_id,status,created_at").eq("adviser_id", req.user.user_id).eq("status", "Pending").order("created_at");
+    if (error) return res.status(error.code === "42P01" || error.code === "PGRST205" ? 503 : 500).json({
+        success: false,
+        message: error.code === "42P01" || error.code === "PGRST205"
+            ? "Adviser applications are not configured. Apply the 002_group_adviser_applications.sql migration."
+            : "Unable to load adviser applications.",
+    });
+    if (!applications.length) return res.json([]);
+    const groupIds = [...new Set(applications.map((item) => Number(item.group_id)))];
+    const userIds = [...new Set(applications.map((item) => Number(item.applicant_id)))];
+    const [groupsResult, membersResult, usersResult] = await Promise.all([
+        supabase.from("groups").select("group_id,group_name,course").in("group_id", groupIds),
+        supabase.from("group_members").select("group_id,user_id").in("group_id", groupIds),
+        supabase.from("users").select("user_id,name").in("user_id", userIds),
+    ]);
+    if (groupsResult.error || membersResult.error || usersResult.error) return res.status(500).json({ success: false, message: "Unable to load adviser application details." });
+    const groupsById = new Map(groupsResult.data.map((group) => [Number(group.group_id), group]));
+    const namesById = new Map(usersResult.data.map((user) => [Number(user.user_id), user.name]));
+    const memberIds = [...new Set(membersResult.data.map((member) => Number(member.user_id)))];
+    const membersResultWithNames = memberIds.length
+        ? await supabase.from("users").select("user_id,name").in("user_id", memberIds)
+        : { data: [], error: null };
+    if (membersResultWithNames.error) return res.status(500).json({ success: false, message: "Unable to load application group members." });
+    const memberNames = new Map(membersResultWithNames.data.map((member) => [Number(member.user_id), member.name]));
+    res.json(applications.map((application) => ({
+        ApplicationID: Number(application.application_id),
+        GroupID: Number(application.group_id),
+        GroupName: groupsById.get(Number(application.group_id))?.group_name || "Group",
+        Course: groupsById.get(Number(application.group_id))?.course || "",
+        Applicant: namesById.get(Number(application.applicant_id)) || "Group leader",
+        Members: membersResult.data.filter((member) => Number(member.group_id) === Number(application.group_id))
+            .map((member) => memberNames.get(Number(member.user_id))).filter(Boolean),
+        CreatedAt: application.created_at,
+    })));
+});
+
+app.post("/api/adviser/applications/:id/respond", getUser, async (req, res) => {
+    if (req.effectiveRole !== "adviser") return res.status(403).json({ success: false, message: "Only advisers can respond to applications." });
+    const applicationId = Number(req.params.id);
+    const action = String(req.body.action ?? "");
+    if (!Number.isSafeInteger(applicationId) || applicationId <= 0 || !["accept", "reject"].includes(action)) {
+        return res.status(400).json({ success: false, message: "A valid application and response are required." });
+    }
+    const { data, error } = await supabase.rpc("respond_to_group_adviser_application", {
+        p_application_id: applicationId, p_adviser_id: req.user.user_id, p_accept: action === "accept",
+    });
+    if (error) {
+        if (error.code === "PGRST202") return res.status(503).json({ success: false, message: "Adviser applications are not configured. Apply the 002_group_adviser_applications.sql migration." });
+        const message = error.message || "Unable to process this application.";
+        const status = message.includes("Only the selected adviser") ? 403 : message.includes("not found") ? 404 : message.includes("already been processed") || message.includes("unavailable") || message.includes("course") || message.includes("assigned") ? 409 : 500;
+        return res.status(status).json({ success: false, message });
+    }
+    res.json({ success: true, status: data });
+});
+
 app.delete("/api/groups/:id", getUser, requireStudent, async (req, res) => {
     const groupId = Number(req.params.id);
     if (!Number.isInteger(groupId)) return res.status(400).json({ success: false, message: "A valid group is required." });
@@ -691,6 +875,14 @@ app.post("/api/groups", getUser, requireStudent, async (req, res) => {
     if (!name?.trim() || !course?.trim() || !specialty?.trim() || !Number.isInteger(max) || max < 2 || max > 4) {
         return res.status(400).json({ success: false, message: "Group name, course, specialty, and a member limit from 2 to 4 are required." });
     }
+    if (!req.user.course || normalizeCourse(req.user.course) === "unspecified" || normalizeCourse(course) !== normalizeCourse(req.user.course)) {
+        return res.status(409).json({ success: false, message: "A group must use the creator's assigned course." });
+    }
+    const { data: pendingRequest, error: pendingError } = await supabase.from("group_join_requests")
+        .select("request_id").eq("user_id", req.user.user_id).eq("status", "Pending")
+        .gt("expires_at", new Date().toISOString()).maybeSingle();
+    if (pendingError) return res.status(500).json({ success: false, message: "Unable to verify your existing group request." });
+    if (pendingRequest) return res.status(409).json({ success: false, message: "Cancel or wait for your pending group request before creating a group." });
     const { data, error } = await supabase.rpc("create_group_with_owner", {
         p_name: name.trim(), p_course: course.trim(), p_specialty: specialty.trim(),
         p_description: description?.trim() || "", p_owner_id: req.user.user_id, p_max_members: max,
@@ -704,6 +896,16 @@ app.post("/api/groups/:id/members", getUser, requireStudent, async (req, res) =>
     const groupId = Number(req.params.id);
     const memberId = Number(req.body.userId);
     if (!Number.isInteger(groupId) || !Number.isInteger(memberId)) return res.status(400).json({ success: false, message: "A valid group and student are required." });
+    const [groupResult, studentResult] = await Promise.all([
+        supabase.from("groups").select("course,finalized_at").eq("group_id", groupId).maybeSingle(),
+        supabase.from("users").select("course").eq("user_id", memberId).eq("role", "student").maybeSingle(),
+    ]);
+    if (groupResult.error || studentResult.error) return res.status(500).json({ success: false, message: "Unable to verify group membership eligibility." });
+    if (!groupResult.data || !studentResult.data) return res.status(404).json({ success: false, message: "Group or student not found." });
+    if (groupResult.data.finalized_at) return res.status(409).json({ success: false, message: "This group is finalized and membership is locked." });
+    if (normalizeCourse(groupResult.data.course) !== normalizeCourse(studentResult.data.course)) {
+        return res.status(409).json({ success: false, message: "Students can only join a group in their own course." });
+    }
     const { error } = await supabase.rpc("add_student_to_group", { p_group_id: groupId, p_student_id: memberId, p_owner_id: req.user.user_id });
     if (error) return rpcError(res, error, RPC_MESSAGES);
     res.status(201).json({ success: true });
@@ -933,7 +1135,7 @@ app.get("/api/admin/groups/:id/members", getUser, requireAdmin, async (req, res)
     if (!group) return res.status(404).json({ success: false, message: "Group not found." });
     const [memberResult, studentResult, auditResult, adminResult] = await Promise.all([
         supabase.from("group_members").select("user_id").eq("group_id", groupId),
-        supabase.from("users").select("user_id,user_code,first_name,last_name,name").eq("role", "student").eq("is_active", true).order("name"),
+        supabase.from("users").select("user_id,user_code,first_name,last_name,name,course").eq("role", "student").eq("is_active", true).order("name"),
         supabase.from("group_membership_audit").select("user_id,admin_id,action,changed_at").eq("group_id", groupId).order("changed_at", { ascending: false }).limit(50),
         supabase.from("users").select("user_id,name,first_name,last_name").in("role", ["admin", "superadmin"]),
     ]);
@@ -950,7 +1152,7 @@ app.get("/api/admin/groups/:id/members", getUser, requireAdmin, async (req, res)
     res.json({
         group: { GroupID: Number(group.group_id), GroupName: group.group_name, Finalized: Boolean(group.finalized_at), MaxMembers: group.max_members, OwnerID: Number(group.owner_id) },
         members: studentResult.data.filter((row) => memberIds.has(Number(row.user_id))).map(toStudentDto),
-        availableStudents: studentResult.data.filter((row) => !memberIds.has(Number(row.user_id))).map(toStudentDto),
+        availableStudents: studentResult.data.filter((row) => !memberIds.has(Number(row.user_id)) && normalizeCourse(row.course) === normalizeCourse(group.course)).map(toStudentDto),
         audit: auditResult.data.map((row) => ({
             Student: usersById.get(Number(row.user_id))?.name || `User ${row.user_id}`,
             Admin: adminsById.get(Number(row.admin_id))?.name || `Admin ${row.admin_id}`,
@@ -965,6 +1167,17 @@ app.post("/api/admin/groups/:id/members", getUser, requireAdmin, async (req, res
     const action = String(req.body.action ?? "");
     if (!Number.isSafeInteger(groupId) || groupId <= 0 || !Number.isSafeInteger(studentId) || studentId <= 0 || !["add", "remove"].includes(action)) {
         return res.status(400).json({ success: false, message: "A valid group, student, and membership action are required." });
+    }
+    if (action === "add") {
+        const [groupResult, studentResult] = await Promise.all([
+            supabase.from("groups").select("course").eq("group_id", groupId).maybeSingle(),
+            supabase.from("users").select("course").eq("user_id", studentId).eq("role", "student").maybeSingle(),
+        ]);
+        if (groupResult.error || studentResult.error) return res.status(500).json({ success: false, message: "Unable to verify group course eligibility." });
+        if (!groupResult.data || !studentResult.data) return res.status(404).json({ success: false, message: "Group or student not found." });
+        if (normalizeCourse(groupResult.data.course) !== normalizeCourse(studentResult.data.course)) {
+            return res.status(409).json({ success: false, message: "Students can only join a group in their own course." });
+        }
     }
     const { error } = await supabase.rpc("admin_change_finalized_group_member", {
         p_group_id: groupId, p_student_id: studentId, p_admin_id: req.user.user_id, p_action: action,
@@ -1325,6 +1538,26 @@ app.get("/api/ai/groups/:groupId/selected-title", getUser, requireStudent, async
         .eq("group_id", groupId).maybeSingle();
     if (error) return res.status(500).json({ success: false, message: "Unable to load selected title." });
     res.json({ selected_title: data ? { ...data.title_details, title: data.selected_title, created_at: data.created_at, updated_at: data.updated_at } : null });
+});
+
+app.use("/api", (_req, res) => {
+    res.status(404).json({ success: false, message: "API endpoint not found." });
+});
+
+app.use((error, req, res, next) => {
+    console.error("Unhandled API request error:", {
+        method: req.method,
+        path: req.path,
+        error: error?.stack || error,
+    });
+    if (res.headersSent) return next(error);
+    const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599
+        ? error.status
+        : 500;
+    res.status(status).json({
+        success: false,
+        message: status >= 500 ? "Unable to process this request. Please try again." : "The request could not be processed.",
+    });
 });
 
 module.exports = app;

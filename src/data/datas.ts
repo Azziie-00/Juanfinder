@@ -150,6 +150,9 @@ export interface AdviserData {
   name: string;
   slots: number | null;
   maxSlots: number;
+  course?: string;
+  availability?: number;
+  hasCapacity?: boolean;
   bio: string;
   gender?: string;
   requirements: string[];

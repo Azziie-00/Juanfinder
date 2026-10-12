@@ -5,9 +5,10 @@
 1. Create or select a Supabase project.
 2. In its SQL Editor, run [`server/database.sql`](server/database.sql). It creates the PostgreSQL tables, indexes, transaction-safe group functions, and sample accounts.
 3. In the same SQL Editor, run [`server/migrations/001_capstone_workflows.sql`](server/migrations/001_capstone_workflows.sql). This additive migration adds profiles, private portfolios, API sessions, temporary access, group finalization, expiring join requests, and audited admin membership overrides. Apply it after `database.sql`; do not rerun `database.sql` against a production database because it also creates sample accounts.
-4. The migration creates the private `student-portfolios` Storage bucket. Uploads and previews are mediated by the server using the service-role key; do not make the bucket public or expose that key to the browser. The migration attempts to schedule request/account expiration every five minutes with `pg_cron`. If that extension is unavailable, configure a Supabase scheduled database job to run `SELECT public.expire_juan_finder_records();` every five minutes.
-5. In Supabase Project Settings, copy the project URL and the server-side `service_role` key (or secret API key, if your project uses the newer key format). Keep the key private.
-6. Create `server/.env` from [`server/.env.example`](server/.env.example), then set the project URL and key:
+4. Run [`server/migrations/002_group_adviser_applications.sql`](server/migrations/002_group_adviser_applications.sql) after the first migration to enable persisted group adviser applications. This is additive and does not modify existing user, group, or membership records.
+5. The first migration creates the private `student-portfolios` Storage bucket. Uploads and previews are mediated by the server using the service-role key; do not make the bucket public or expose that key to the browser. The migration attempts to schedule request/account expiration every five minutes with `pg_cron`. If that extension is unavailable, configure a Supabase scheduled database job to run `SELECT public.expire_juan_finder_records();` every five minutes.
+6. In Supabase Project Settings, copy the project URL and the server-side `service_role` key (or secret API key, if your project uses the newer key format). Keep the key private.
+7. Create `server/.env` from [`server/.env.example`](server/.env.example), then set the project URL and key:
 
    ```env
    SUPABASE_URL=https://your-project-ref.supabase.co
@@ -18,7 +19,7 @@
 
    Use your actual Supabase project URL. Never put the service key in a `VITE_` variable, frontend code, or a committed file. `.env` files are ignored by Git. Preserve any existing values if you still need them to export data from SQL Server.
 
-7. Install and start the API:
+8. Install and start the API:
 
    ```powershell
    cd path\to\Juanfinder
@@ -26,7 +27,7 @@
    npm run server
    ```
 
-8. In a second terminal at the project root, start the frontend:
+9. In a second terminal at the project root, start the frontend:
 
    ```powershell
    npm run dev
@@ -46,7 +47,7 @@ The frontend and Express API are served from the same Vercel deployment. Set the
 
 Do not set `VITE_API_URL` in Vercel for this same-domain setup. Production API calls use `/api` on the Vercel domain; local development uses `http://localhost:5000`. Save the variables and redeploy so the serverless API receives them. Verify the deployed connection at `https://your-project.vercel.app/api/health/db`.
 
-Run the migration once in the Supabase SQL Editor for the Supabase project used by both localhost and Vercel; the app does not run schema migrations automatically. Configure the scheduled expiration job as described above if `pg_cron` was unavailable.
+Run `server/database.sql` and migrations 001 and 002 in order in the Supabase SQL Editor for the project used by both localhost and Vercel; the app does not run schema migrations automatically. Migration 002 applies the fixed 10-group adviser capacity check using existing group-membership and adviser-assignment records. Configure the scheduled expiration job as described above if `pg_cron` was unavailable.
 
 Sample accounts created by the SQL script:
 

@@ -75,6 +75,10 @@
 .status-pill      { display: inline-block; border-radius: 20px; padding: 3px 12px; font-size: 11px; font-weight: 700; }
 .status-pill.open { background: rgba(46,204,113,.18); color: #1a7a3a; }
 .status-pill.full { background: rgba(26,42,74,.1); color: rgba(26,42,74,.5); }
+.finder-section-row th { text-align:left !important; background:#e6edf7 !important; color:var(--navy) !important; font-size:11px !important; letter-spacing:.6px; }
+.finder-type-badge { font-size:9px !important; vertical-align:middle; }
+.finder-type-badge.student { background:rgba(26,42,74,.1); color:var(--navy); }
+.finder-type-badge.group { background:rgba(46,109,164,.2); color:#2e6da4; }
 
 /*Footer*/
 .finder-footer { background: var(--bg-page); border-top: 1px solid rgba(26,42,74,.1); flex-shrink: 0; }

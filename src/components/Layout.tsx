@@ -28,7 +28,6 @@ const ROLE_LABEL: Record<string, string> = { student:'Student', adviser:'Adviser
 export default function Layout({ children, hideSidebar = false }: { children: ReactNode; hideSidebar?: boolean }) {
   const { user, viewRole, effectiveRole, switchViewRole, logout } = useAuth();
   const navigate = useNavigate();
-  const [hasMyGroup, setHasMyGroup] = useState(() => Boolean(sessionStorage.getItem('jf_mygroup')));
   const [ddOpen, setDdOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const ddRef = useRef<HTMLDivElement>(null);
@@ -36,7 +35,7 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
 
   const initials  = getInitials(user?.name || 'JD');
   const roleLabel = ROLE_LABEL[effectiveRole || 'student'] || 'Student';
-  const navLinks  = effectiveRole === 'admin' || effectiveRole === 'superadmin' ? ADMIN_NAV_LINKS : effectiveRole === 'adviser' ? ADVISER_NAV_LINKS : STUDENT_NAV_LINKS.filter((link) => link.to !== '/mygroup' || hasMyGroup);
+  const navLinks  = effectiveRole === 'admin' || effectiveRole === 'superadmin' ? ADMIN_NAV_LINKS : effectiveRole === 'adviser' ? ADVISER_NAV_LINKS : STUDENT_NAV_LINKS;
   const unreadCount = NOTIFICATIONS.filter(n => !n.read).length;
 
   const switchDemoRole = (role: string) => {
@@ -71,12 +70,6 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
-  }, []);
-
-  useEffect(() => {
-    const updateGroupLink = () => setHasMyGroup(Boolean(sessionStorage.getItem('jf_mygroup')));
-    window.addEventListener('jf-mygroup-updated', updateGroupLink);
-    return () => window.removeEventListener('jf-mygroup-updated', updateGroupLink);
   }, []);
 
   return (
