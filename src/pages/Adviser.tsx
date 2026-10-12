@@ -191,14 +191,14 @@ export default function Adviser() {
             </thead>
             <tbody>
               {slice.length === 0 ? (
-                <tr><td colSpan={3} className="adv-empty">No eligible advisers are available for your course.</td></tr>
+                <tr><td colSpan={3} className="adv-empty">No active advisers are available.</td></tr>
               ) : slice.map(a => {
                 const assignedGroups = a.slots ?? 0;
                 const hasCapacity = a.hasCapacity ?? assignedGroups < 10;
                 return (
                   <tr key={a.id}>
                     <td><span className="adv-name-link">{a.name}</span></td>
-                    <td><span className="adv-capacity-value">--/10</span></td>
+                    <td><span className="adv-capacity-value">{Math.max(0, a.maxSlots - assignedGroups)}/10</span></td>
                     <td>
                       <button
                         className="adv-apply-link"

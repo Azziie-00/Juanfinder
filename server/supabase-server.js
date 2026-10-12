@@ -430,17 +430,11 @@ app.delete("/api/portfolio/:id", getUser, async (req, res) => {
 });
 
 app.get("/api/advisers", getUser, async (req, res) => {
-    let adviserQuery = supabase.from("users").select("user_id,user_code,username,name,bio,gender,requirements,course,expires_at").eq("role", "adviser").eq("is_active", true).order("name");
-    let studentCourse = null;
-    if (req.effectiveRole === "student") {
-        studentCourse = normalizeCourse(req.user.course);
-        if (!studentCourse || studentCourse === "unspecified") return res.json([]);
-    }
+    const adviserQuery = supabase.from("users").select("user_id,user_code,username,name,bio,gender,requirements,course,expires_at").eq("role", "adviser").eq("is_active", true).order("name");
     const { data, error } = await adviserQuery;
     if (error) return res.status(500).json({ success: false, message: "Unable to load advisers." });
     const eligibleAdvisers = data.filter((user) =>
-        (!user.expires_at || new Date(user.expires_at) > new Date())
-        && (!studentCourse || !normalizeCourse(user.course) || normalizeCourse(user.course) === "unspecified" || normalizeCourse(user.course) === studentCourse)
+        !user.expires_at || new Date(user.expires_at) > new Date()
     );
     const adviserIds = eligibleAdvisers.map((user) => Number(user.user_id));
     const assignedStudentsResult = adviserIds.length
