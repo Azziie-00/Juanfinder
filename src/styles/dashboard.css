@@ -7,6 +7,26 @@
 .dashboard-content::-webkit-scrollbar { width: 4px; }
 .dashboard-content::-webkit-scrollbar-thumb { background: rgba(26,42,74,.2); border-radius: 2px; }
 
+/* Skill recommendations in the existing Dashboard panel. */
+.groups-card.recommended-groups { height: auto; max-height: none; min-height: 280px; flex: 1 0 auto; overflow: visible; color: var(--navy); }
+.recommended-groups-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.recommended-groups .groups-title { margin: 0 0 6px; flex-wrap: wrap; }
+.recommended-groups p { font-size: 12px; margin: 0 0 10px; }
+.recommended-groups-header p { margin: 0; }
+.recommended-groups-action { border: 0; background: var(--navy); color: var(--amber); border-radius: 8px; padding: 9px 12px; font-size: 12px; font-weight: 700; }
+.recommended-groups button:disabled { opacity: .6; cursor: wait; }
+.recommended-groups button:focus-visible, .recommended-groups a:focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; }
+.recommended-groups-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 12px; }
+.recommended-groups .recommended-group-card { min-width: 0; max-width: none; margin: 0; cursor: default; overflow-wrap: anywhere; padding: 14px; }
+.recommended-group-card h3 { color: #fff; font-size: 14px; font-weight: 700; margin: 0; }
+.recommended-group-card p { color: #e0eafa; margin: 0; }
+.recommended-group-meta, .recommended-group-card .recommended-group-description { color: #b8cce7; font-size: 11px; }
+.recommended-group-card .group-card-join { align-self: flex-start; margin-top: auto; min-height: 32px; font-size: 12px; text-align: left; }
+.recommended-group-skills { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
+.recommended-group-skills span { border-radius: 6px; background: var(--navy-light); color: #fff; padding: 3px 8px; font-size: 11px; }
+.recommended-groups .recommended-groups-error { color: #701919; font-weight: 600; }
+.recommended-groups a { color: var(--navy); font-weight: 700; font-size: 12px; }
+
 @media (max-width: 768px) {
   .dashboard-content { padding: 10px 10px 80px; }
 }

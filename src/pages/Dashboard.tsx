@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Row, Col, InputGroup, Form, Spinner } from 'react-bootstrap';
 import Layout from '../components/Layout';
 import Calendar from '../components/Calendar';
+import RecommendedGroups from '../components/RecommendedGroups';
 import type { AuthUser, GroupData } from "../data/datas";
 import { useAuth } from '../context/useAuth';
 import { API_BASE_URL } from '../data/api';
@@ -120,7 +121,6 @@ export default function Dashboard() {
   const firstName = (user?.name || 'Student').trim().split(' ')[0];
   const [groups, setGroups]           = useState<GroupData[]>([]);
   const [joined, setJoined]           = useState<string | null>(null);
-  const [groupError, setGroupError]   = useState('');
   const [chatHistory, setChatHistory] = useState<AIMessage[]>([]);
   const [messages, setMessages]       = useState<ChatMessage[]>([{ role:'ai', text:`Hi ${firstName}! I'm JUAN-AI. Tap any group to join and I'll recommend research titles for you!` }]);
   const [inputVal, setInputVal]       = useState('');
@@ -147,23 +147,14 @@ export default function Dashboard() {
     fetch(`${API_BASE_URL}/groups`, { headers: authHeaders(user, viewRole) })
       .then(async response => response.ok ? response.json() : [])
       .then((records: { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; Status: string; MaxMembers: number; MemberCount: number; OwnerID: number; MemberNames: string; IsMember: number; IsPending: number; FinalizedAt?: string | null }[]) => {
-        setGroups(records.filter(record => record.Status === 'Open' && !record.IsMember && !record.IsPending).map(record => ({
-          id: String(record.GroupID), name: record.GroupName, course: record.Course,
-          specialty: record.Specialty, desc: record.Description, status: record.Status,
-          maxMembers: record.MaxMembers, members: record.MemberCount,
-          slots: Math.max(0, record.MaxMembers - record.MemberCount),
-          availability: `${Math.max(0, record.MaxMembers - record.MemberCount)} / ${record.MaxMembers}`,
-          ownerId: record.OwnerID, memberNames: record.MemberNames?.split('|').filter(Boolean) || [],
-          finalizedAt: record.FinalizedAt || null,
-        })));
-      });
+        const existing = records.find(record => record.IsMember || record.IsPending || record.OwnerID === Number(user.id));
+        setJoined(existing?.GroupName || null);
+      })
+      .catch(error => console.warn('Could not check group membership:', error));
   }, [user, viewRole]);
 
   useEffect(() => {
-    if (!user) {
-      setAiDisabled(false);
-      return;
-    }
+    if (!user) return;
     let active = true;
     fetch(`${API_BASE_URL}/ai/chat/status`, { headers: authHeaders(user, viewRole) })
       .then(async response => {
@@ -330,23 +321,25 @@ export default function Dashboard() {
   };
 
   const joinGroup = async (group: GroupData) => {
-    setGroupError('');
     const response = await fetch(`${API_BASE_URL}/groups/${group.id}/join`, { method: 'POST', headers: authHeaders(user, viewRole) });
     const data = await response.json();
     if (!response.ok) {
-      setGroupError(data.message || 'Unable to send the group request.');
-      return;
+      throw new Error(data.message || 'Unable to send the group request.');
     }
     setJoined(group.name);
-    setGroups(current => current.filter(item => item.id !== group.id));
+    setGroups([]);
     addBubble(`I requested to join "${group.name}"`, 'user');
+    if (aiDisabled) {
+      addBubble('Your join request is pending approval. You can check its status in My Group.', 'ai');
+      return;
+    }
     setAiLoading(true);
     const newHist: AIMessage[] = [...chatHistory, { role:'user', content:`Student requested to join "${group.name}". Let them know their request is pending approval in under 50 words.` }];
     try {
       const reply = await callAI(addCVContext(AI_CONFIG.systemPrompt, cvProfile, cvFilename), newHist, user, viewRole);
       setChatHistory([...newHist, { role:'assistant', content:reply }]);
       addBubble(reply, 'ai');
-    } catch { addBubble('Welcome to the group!', 'ai'); }
+    } catch { addBubble('Your join request is pending approval. You can check its status in My Group.', 'ai'); }
     setAiLoading(false);
     await fetchTitles(group.name);
   };
@@ -379,25 +372,8 @@ export default function Dashboard() {
               </div>
               <div className="announce-body"><div className="announce-msg">{ADVISER.announcement}</div></div>
             </div>
-            <div className="groups-card">
-              <div className="groups-title">Recommended groups <span className="ai-badge">AI-powered</span></div>
-              {groupError && <div role="alert" className="text-danger px-3">{groupError}</div>}
-              <div className="groups-scroll">
-                {groups.map(g => (
-                  <div key={g.id} className={`group-card${joined===g.name?' active':''}`}>
-                    <div className="group-card-name">{g.name}</div>
-                    <div className="group-card-desc">{g.desc}</div>
-                    <div className="group-card-footer">
-                      <span className={`group-card-slots${(g.slots??0)===0?' full':''}`}>
-                        {(g.slots??0)>0 ? `${g.slots} slot${g.slots!==1?'s':''} open` : 'Full'}
-                      </span>
-                      <button className="group-card-join" disabled={aiLoading || (g.slots ?? 0) === 0} onClick={() => void joinGroup(g)}>Request to join →</button>
-                    </div>
-                  </div>
-                ))}
-                {groups.length === 0 && <div className="px-3 py-4 text-muted">No open groups are available right now.</div>}
-              </div>
-            </div>
+            <RecommendedGroups key={`${user?.id}:${viewRole}`} unavailable={Boolean(joined)}
+              onMatchesChange={setGroups} onJoinGroup={joinGroup} />
             <div className="adviser-rec-card">
               <div className="groups-title">Recommended adviser <span className="ai-badge">AI-powered</span></div>
               <div className="adviser-rec-item">
@@ -414,15 +390,15 @@ export default function Dashboard() {
           <Col xs={12} lg={4}>
             <div className="ai-panel">
               <div className="ai-panel-title">JUAN-AI Assistant</div>
-              <div className="ai-recs">
+              {groups.length > 0 && !joined && <div className="ai-recs">
                 <div className="ai-recs-label">Group recommendations</div>
-                {[...groups].reverse().map(g => (
+                {groups.map(g => (
                   <div key={g.id} className="ai-rec-item" style={joined===g.name?{borderLeft:'3px solid #f59e0b'}:{}}>
-                    <div className="ai-rec-item-top"><span>{g.name}</span><span className="slots">{g.slots} open</span></div>
+                    <div className="ai-rec-item-top"><span>{g.name}</span><span className="slots">{g.maxMembers - g.members} open</span></div>
                     <div className="ai-rec-item-desc">{g.desc}</div>
                   </div>
                 ))}
-              </div>
+              </div>}
               {titlesGroup && (
                 <div className="title-rec-section">
                   <div className="title-rec-header">

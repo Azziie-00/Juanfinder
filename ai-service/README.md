@@ -59,11 +59,11 @@ This is a local-development setup. Ollama and this service must not be exposed d
 
 The application authenticates API requests using server-verified bearer sessions. The Express API verifies student access and group eligibility before forwarding requests with the shared `AI_SERVICE_TOKEN`. Keep that token and `SUPABASE_SERVICE_ROLE_KEY` server-only.
 
-## Finder group recommendations
+## Dashboard group recommendations
 
 `POST /recommend-groups` is an internal token-protected endpoint. Express supplies only saved profile skills and up to 12 eligible group candidates. The service uses the same fixed `llama3.2:1b` model as chat, CV analysis, and title generation, and returns up to three ranked matches with reasons and matching profile skills. `OLLAMA_MODEL` and `GROUP_RECOMMENDATION_MODEL` environment variables do not override the model. The health endpoint reports the shared model constant. The request runs in FastAPI's worker thread pool, like the other synchronous generation endpoints.
 
-Finder discovery does not use or reset the capstone-title usage ledger. It requires only the existing profile/group schema, not the AI title tables. No recommendations or new personal data are persisted. Install test dependencies with `pip install -r requirements-dev.txt`, then use `python -m unittest test_group_recommendations.py` to run the model-contract and endpoint tests without Ollama or Supabase.
+Dashboard group discovery does not use or reset the capstone-title usage ledger. It requires only the existing profile/group schema, not the AI title tables. No recommendations or new personal data are persisted. Install test dependencies with `pip install -r requirements-dev.txt`, then use `python -m unittest test_group_recommendations.py` to run the model-contract and endpoint tests without Ollama or Supabase.
 
 
 ## Course-aware CV analysis

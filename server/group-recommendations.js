@@ -89,10 +89,10 @@ function createRecommendationHandler({ supabase, callAIService }) {
             // A group can fill or the student can join while Ollama is running.
             const current = await loadCandidates(req.user);
             const recommendations = cleanRecommendations(result, current.candidates.filter(group => candidates.some(candidate => Number(candidate.group_id) === Number(group.group_id))), skills);
-            return res.json({ recommendations, message: recommendations.length ? "" : current.message || "No strong skill matches found. You can still browse the open groups below." });
+            return res.json({ recommendations, message: recommendations.length ? "" : current.message || "No strong skill matches found. You can still browse open groups in Finder." });
         } catch (error) {
             console.error("Group recommendations failed:", error.message);
-            return res.status(503).json({ success: false, message: "Group recommendations are temporarily unavailable. Please try again; you can still browse groups below." });
+            return res.status(503).json({ success: false, message: "Group recommendations are temporarily unavailable. Please try again; you can still browse groups in Finder." });
         }
     };
 }
