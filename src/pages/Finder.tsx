@@ -1,6 +1,7 @@
 import { Fragment, useState, useEffect } from 'react';
 import { Modal, Button, Form, Table, Badge, Dropdown } from 'react-bootstrap';
 import Layout from '../components/Layout';
+import RecommendedGroups from '../components/RecommendedGroups';
 import { getInitials } from '../data/datas';
 import type { GroupData, StudentData } from '../data/datas';
 import { useAuth } from '../context/useAuth';
@@ -114,6 +115,7 @@ export default function Finder() {
   // ── Join group ──
   const openRoleModal = (g: GroupData) => {
     const skills = g.specialty ? g.specialty.split('/').map(s => s.trim()) : ['Developer'];
+    setDetailGroup(null);
     setRoleModal({ open:true, group:g, skills });
     setSelectedRole(null);
   };
@@ -248,6 +250,15 @@ export default function Finder() {
 
         {/*Table*/}
         <div className="table-wrap flex-grow-1" style={{ overflowY:'auto', overflowX:'auto', padding:'0 12px' }}>
+          {effectiveRole === 'student' && user && !hasGroup && filter !== 'STUDENT' && (
+            <RecommendedGroups key={`${user.id}:${viewRole}`} onViewGroup={group => {
+              setGroups(current => {
+                const existing = current.find(item => item.id === group.id);
+                return existing ? current.map(item => item.id === group.id ? { ...item, ...group } : item) : [group, ...current];
+              });
+              setDetailGroup(group);
+            }} />
+          )}
           <Table className="finder-table mb-0">
             <thead><tr>{cols.map(c => <th key={c}>{c}</th>)}</tr></thead>
             <tbody>

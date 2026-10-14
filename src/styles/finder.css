@@ -191,3 +191,21 @@
   .jf-modal .modal-content { border-radius: 20px 20px 0 0; }
   .jf-modal .modal-dialog { position: fixed; bottom: 0; left: 0; right: 0; }
 }
+/* Personalized group recommendations */
+.recommended-groups { margin: 16px 0; padding: 20px; border: 1px solid #d9e1ed; border-radius: 14px; background: #f5f8fd; color: #1a2a4a; }
+.recommended-groups-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.recommended-groups h2 { font-size: 1.15rem; font-weight: 800; margin: 0 0 6px; }
+.recommended-groups p { font-size: .9rem; margin: 0 0 12px; }
+.recommended-groups-header p, .recommended-group-meta { color: #51627e; font-size: .8rem; }
+.recommended-groups-action { border: 1px solid #253e65; background: #1a2a4a; color: white; border-radius: 8px; padding: 9px 14px; font-size: .85rem; font-weight: 700; }
+.recommended-groups-action:hover { background: #30496f; }
+.recommended-groups-action:disabled { opacity: .6; cursor: wait; }
+.recommended-groups-action:focus-visible { outline: 3px solid #b77900; outline-offset: 3px; }
+.recommended-groups-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 14px; }
+.recommended-group-card { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px; border: 1px solid #d9e1ed; border-radius: 10px; background: white; overflow-wrap: anywhere; }
+.recommended-group-card h3 { font-size: 1rem; font-weight: 800; margin: 0; }
+.recommended-group-card p { margin: 0; }
+.recommended-group-card > button { margin-top: auto; }
+.recommended-group-skills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.recommended-group-skills span { border-radius: 6px; background: #e9effa; color: #273e66; padding: 3px 8px; font-size: .75rem; }
+.recommended-groups .recommended-groups-error { color: #a32424; }

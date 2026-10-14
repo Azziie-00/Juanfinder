@@ -78,19 +78,19 @@ def normalize_academic_program(course: str | None) -> dict:
         "focus": "use evidence from the CV and propose a practical project appropriate to the student's actual skills and interests",
     }
 
-def ask_json(system_prompt: str, user_prompt: str) -> dict:
+def ask_json(system_prompt: str, user_prompt: str, *, model: str = OLLAMA_MODEL, num_ctx: int = 4096) -> dict:
     try:
         response = requests.post(
             f"{OLLAMA_URL}/api/chat",
             json={
-                "model": OLLAMA_MODEL,
+                "model": model,
                 "stream": False,
                 "format": "json",
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                "options": {"temperature": 0.2, "num_ctx": 4096},
+                "options": {"temperature": 0.2, "num_ctx": num_ctx},
             },
             timeout=TIMEOUT_SECONDS,
         )

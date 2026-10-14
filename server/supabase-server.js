@@ -9,6 +9,7 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
 const cors = require("cors");
+const { createRecommendationHandler } = require("./group-recommendations");
 
 const app = express();
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -628,6 +629,9 @@ app.get("/api/groups", getUser, async (req, res) => {
     });
     res.json(rows);
 });
+
+app.post("/api/groups/recommendations", getUser, requireStudent,
+    createRecommendationHandler({ supabase, callAIService }));
 
 app.post("/api/groups/:id/join", getUser, requireStudent, async (req, res) => {
     const groupId = Number(req.params.id);
