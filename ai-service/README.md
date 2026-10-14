@@ -6,7 +6,6 @@ This service extracts text from student CVs and documents and calls Ollama for p
 
 1. Install Ollama from https://ollama.com/download.
 2. In PowerShell, run `ollama pull llama3.2:1b`.
-   For Finder group recommendations, also run `ollama pull llama3.1:8b`.
 3. Install Python 3.11 or newer.
 4. From the repository root:
 
@@ -62,7 +61,7 @@ The application authenticates API requests using server-verified bearer sessions
 
 ## Finder group recommendations
 
-`POST /recommend-groups` is an internal token-protected endpoint. Express supplies only saved profile skills and up to 12 eligible group candidates. The service calls Ollama with `GROUP_RECOMMENDATION_MODEL` (default `llama3.1:8b`) and returns up to three ranked matches with reasons and matching profile skills. This model setting is separate from `OLLAMA_MODEL`, so existing CV/chat behavior is preserved. The request runs in FastAPI's worker thread pool, like the other synchronous generation endpoints.
+`POST /recommend-groups` is an internal token-protected endpoint. Express supplies only saved profile skills and up to 12 eligible group candidates. The service uses the same fixed `llama3.2:1b` model as chat, CV analysis, and title generation, and returns up to three ranked matches with reasons and matching profile skills. `OLLAMA_MODEL` and `GROUP_RECOMMENDATION_MODEL` environment variables do not override the model. The health endpoint reports the shared model constant. The request runs in FastAPI's worker thread pool, like the other synchronous generation endpoints.
 
 Finder discovery does not use or reset the capstone-title usage ledger. It requires only the existing profile/group schema, not the AI title tables. No recommendations or new personal data are persisted. Install test dependencies with `pip install -r requirements-dev.txt`, then use `python -m unittest test_group_recommendations.py` to run the model-contract and endpoint tests without Ollama or Supabase.
 

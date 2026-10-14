@@ -4,7 +4,7 @@ import re
 import requests
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
+OLLAMA_MODEL = "llama3.2:1b"
 TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))
 
 class AIServiceError(RuntimeError):
@@ -78,14 +78,14 @@ def normalize_academic_program(course: str | None) -> dict:
         "focus": "use evidence from the CV and propose a practical project appropriate to the student's actual skills and interests",
     }
 
-def ask_json(system_prompt: str, user_prompt: str, *, model: str = OLLAMA_MODEL, num_ctx: int = 4096) -> dict:
+def ask_json(system_prompt: str, user_prompt: str, *, num_ctx: int = 4096, response_schema: dict | None = None) -> dict:
     try:
         response = requests.post(
             f"{OLLAMA_URL}/api/chat",
             json={
-                "model": model,
+                "model": OLLAMA_MODEL,
                 "stream": False,
-                "format": "json",
+                "format": response_schema if response_schema is not None else "json",
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},

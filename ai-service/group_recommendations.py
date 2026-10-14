@@ -1,10 +1,6 @@
 import json
-import os
 
 from ai_service import AIServiceError, ask_json
-
-GROUP_RECOMMENDATION_MODEL = os.getenv("GROUP_RECOMMENDATION_MODEL", "llama3.1:8b")
-
 
 def recommend_groups(skills: list[str], groups: list[dict]) -> dict:
     if not skills or not groups:
@@ -25,7 +21,27 @@ def recommend_groups(skills: list[str], groups: list[dict]) -> dict:
         '"matched_skills":["SQL"]}]}. Data:\n'
         + json.dumps({"skills": skills, "groups": groups}, ensure_ascii=False)
     )
-    result = ask_json(system, prompt, model=GROUP_RECOMMENDATION_MODEL, num_ctx=8192)
+    # Constrain the small model's output to the IDs and skills actually supplied.
+    schema = {
+        "type": "object",
+        "properties": {"recommendations": {
+            "type": "array", "maxItems": 3,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "group_id": {"type": "integer", "enum": [group["group_id"] for group in groups]},
+                    "reason": {"type": "string", "minLength": 1, "maxLength": 600},
+                    "matched_skills": {"type": "array", "minItems": 1, "maxItems": len(skills),
+                                       "items": {"type": "string", "enum": skills}},
+                },
+                "required": ["group_id", "reason", "matched_skills"],
+                "additionalProperties": False,
+            },
+        }},
+        "required": ["recommendations"],
+        "additionalProperties": False,
+    }
+    result = ask_json(system, prompt, num_ctx=8192, response_schema=schema)
     if not isinstance(result.get("recommendations"), list):
         raise AIServiceError("The AI returned invalid group recommendations. Please retry.")
     allowed_ids = {group["group_id"] for group in groups}

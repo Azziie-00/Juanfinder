@@ -69,12 +69,12 @@ The AI panel appears on **My Group** for approved members. Each member can uploa
 
 This is a local-development prototype. Scanned PDFs are not supported in this first version, and adviser matching is not yet connected to the title-selection flow. Do not expose the Ollama port or AI service publicly. AI group endpoints require an authenticated session and verify group membership on the server.
 
-## Recommended groups with Llama 3.1
+## Recommended groups with Llama 3.2 1B
 
 Students without a group or pending join request can open **Finder → Find my matches** to get up to three open group recommendations based on the skills saved in **Profile**. Each suggestion explains the fit, shows matching skills and available places, and opens the existing group details/join-request flow. Empty profiles link to Profile; unavailable AI and no-match results leave normal browsing available.
 
-1. Follow [the AI service setup guide](ai-service/README.md), then run `ollama pull llama3.1:8b` on the AI host.
-2. Copy `ai-service/.env.example` to `ai-service/.env`. Set `GROUP_RECOMMENDATION_MODEL=llama3.1:8b` and replace `AI_SERVICE_TOKEN` with a long random secret. Set the **same** token in `server/.env`, along with `AI_SERVICE_URL` pointing to the AI service. Restart both services. Existing chat/title tools still use `OLLAMA_MODEL`.
+1. Follow [the AI service setup guide](ai-service/README.md), then run `ollama pull llama3.2:1b` on the AI host.
+2. Copy `ai-service/.env.example` to `ai-service/.env` and replace `AI_SERVICE_TOKEN` with a long random secret. Set the **same** token in `server/.env`, along with `AI_SERVICE_URL` pointing to the AI service. Restart both services. All JuanFinder AI features use the fixed `llama3.2:1b` model, including recommendations, chat, CV analysis, and title generation. Model environment overrides are not used.
 3. Save skills in the student's Profile, then use Finder. No new database migration is required beyond the existing profile/group migrations.
 
 `POST /api/groups/recommendations` requires the existing authenticated student session and takes no client-supplied student ID, skills, or candidates. The server loads profile skills and excludes full, finalized, closed, other-course groups and students with existing memberships, ownership, or unexpired pending requests. It shortlists up to 12 candidates by direct skill overlap; Llama ranks semantic fit and returns up to three matches. Only supplied group IDs and actual profile skills are accepted. Eligibility is checked again after inference, and joining still uses the existing transactional eligibility checks. Only skills, group IDs, specialties, and descriptions are sent to the AI service; names, contact details, and uploaded documents are not included.

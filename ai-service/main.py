@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException, UploadFile)
 from pydantic import BaseModel, Field
 from document_parser import extract_document
-from ai_service import AIServiceError, analyze_member, chat_reply, generate_cv_titles, generate_titles
+from ai_service import AIServiceError, OLLAMA_MODEL, analyze_member, chat_reply, generate_cv_titles, generate_titles
 from group_recommendations import recommend_groups
 from typing import Annotated
 
@@ -65,7 +65,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": os.getenv("OLLAMA_MODEL", "llama3.2:1b")}
+    return {"status": "ok", "model": OLLAMA_MODEL}
 
 @app.post("/analyze-member", dependencies=[Depends(require_ai_service_token)])
 async def analyze_member_endpoint(

@@ -56,7 +56,7 @@ export default function RecommendedGroups({ onViewGroup }: { onViewGroup: (group
       <div className="recommended-groups-header">
         <div>
           <h2 id="recommended-groups-heading"><i className="ti ti-sparkles" aria-hidden="true" /> Recommended groups</h2>
-          <p>Skill matches powered by Llama 3.1</p>
+          <p>Skill matches powered by Llama 3.2 1B</p>
         </div>
         <button className="recommended-groups-action" onClick={() => void loadRecommendations()} disabled={loading}>
           {loading ? 'Finding matches…' : error ? 'Try again' : loaded ? 'Refresh matches' : 'Find my matches'}
