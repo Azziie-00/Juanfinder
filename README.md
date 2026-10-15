@@ -7,10 +7,12 @@
 3. In the same SQL Editor, run [`server/migrations/001_capstone_workflows.sql`](server/migrations/001_capstone_workflows.sql). This additive migration adds profiles, private portfolios, API sessions, temporary access, group finalization, expiring join requests, and audited admin membership overrides. Apply it after `database.sql`; do not rerun `database.sql` against a production database because it also creates sample accounts.
 4. Run [`server/migrations/002_group_adviser_applications.sql`](server/migrations/002_group_adviser_applications.sql) after migration 001 to enable persisted group adviser applications. This is additive and does not modify existing user, group, or membership records.
 5. Run [`server/migrations/003_unspecified_course_advisers.sql`](server/migrations/003_unspecified_course_advisers.sql) after migration 002 to keep active advisers whose course is blank or `Unspecified` available to students across courses.
-6. Run [`server/migrations/004_restore_all_adviser_availability.sql`](server/migrations/004_restore_all_adviser_availability.sql) after migration 003 to list active advisers from all courses and allow applications across courses while retaining the 10-group capacity limit.
-7. The first migration creates the private `student-portfolios` Storage bucket. Uploads and previews are mediated by the server using the service-role key; do not make the bucket public or expose that key to the browser. The migration attempts to schedule request/account expiration every five minutes with `pg_cron`. If that extension is unavailable, configure a Supabase scheduled database job to run `SELECT public.expire_juan_finder_records();` every five minutes.
-8. In Supabase Project Settings, copy the project URL and the server-side `service_role` key (or secret API key, if your project uses the newer key format). Keep the key private.
-9. Create `server/.env` from [`server/.env.example`](server/.env.example), then set the project URL and key:
+6. Run [`server/migrations/004_restore_all_adviser_availability.sql`](server/migrations/004_restore_all_adviser_availability.sql) after migration 003 to list active advisers from all courses and allow applications across courses while retaining the existing 10-group default capacity.
+7. Run [`server/migrations/005_adviser_slot_capacity.sql`](server/migrations/005_adviser_slot_capacity.sql) after migration 004. It adds a per-adviser slot capacity (default 10, including for existing advisers) and updates adviser application checks to enforce that configured capacity. Set an adviser's capacity in **Admin → Advisers → Edit User → Adviser Slot Capacity**. Use 0 to stop new applications.
+8. Run [`server/migrations/006_group_adviser_application_requirements.sql`](server/migrations/006_group_adviser_application_requirements.sql) after migration 005 to store metadata for optional group-application requirements files in the private `student-portfolios` bucket.
+9. The first migration creates the private `student-portfolios` Storage bucket. Uploads and previews are mediated by the server using the service-role key; do not make the bucket public or expose that key to the browser. The migration attempts to schedule request/account expiration every five minutes with `pg_cron`. If that extension is unavailable, configure a Supabase scheduled database job to run `SELECT public.expire_juan_finder_records();` every five minutes.
+10. In Supabase Project Settings, copy the project URL and the server-side `service_role` key (or secret API key, if your project uses the newer key format). Keep the key private.
+11. Create `server/.env` from [`server/.env.example`](server/.env.example), then set the project URL and key:
 
    ```env
    SUPABASE_URL=https://your-project-ref.supabase.co
@@ -21,7 +23,7 @@
 
    Use your actual Supabase project URL. Never put the service key in a `VITE_` variable, frontend code, or a committed file. `.env` files are ignored by Git. Preserve any existing values if you still need them to export data from SQL Server.
 
-10. Install and start the API:
+12. Install and start the API:
 
    ```powershell
    cd path\to\Juanfinder
@@ -29,7 +31,7 @@
    npm run server
    ```
 
-11. In a second terminal at the project root, start the frontend:
+13. In a second terminal at the project root, start the frontend:
 
    ```powershell
    npm run dev
@@ -49,7 +51,7 @@ The frontend and Express API are served from the same Vercel deployment. Set the
 
 Do not set `VITE_API_URL` in Vercel for this same-domain setup. Production API calls use `/api` on the Vercel domain; local development uses `http://localhost:5000`. Save the variables and redeploy so the serverless API receives them. Verify the deployed connection at `https://your-project.vercel.app/api/health/db`.
 
-Run `server/database.sql` and migrations 001, 002, 003, and 004 in order in the Supabase SQL Editor for the project used by both localhost and Vercel; the app does not run schema migrations automatically. Migration 002 applies the fixed 10-group adviser capacity check using existing group-membership and adviser-assignment records. Migration 004 restores the full adviser list across courses without changing the fixed 10-group limit. Configure the scheduled expiration job as described above if `pg_cron` was unavailable.
+Run `server/database.sql` and migrations 001, 002, 003, 004, and 005 in order in the Supabase SQL Editor for the project used by both localhost and Vercel; the app does not run schema migrations automatically. Migration 002 introduced the 10-group default capacity check, migration 004 restores the full adviser list across courses, and migration 005 makes that capacity configurable per adviser while preserving the existing default. Configure the scheduled expiration job as described above if `pg_cron` was unavailable.
 
 Sample accounts created by the SQL script:
 

@@ -96,10 +96,17 @@ export const ADVISEE_GROUPS: AdviseeGroup[] = [
   { id:'ag4', groupName:'Albertos',  title:'', members:[], pending:false },
 ];
 
-export interface AdviserAnnouncement { title: string; detail: string; }
+export interface AdviserAnnouncement {
+  title: string;
+  detail: string;
+  announcerName?: string;
+  publishedAt?: string;
+}
 export const ADVISER_ANNOUNCEMENT: AdviserAnnouncement = {
   title: 'Announcement',
-  detail: 'No announcement posted yet. Tap the + button to share an update with your advisees.',
+  detail: 'Please submit your requirements before the deadline.',
+  announcerName: 'Albert Orbase',
+  publishedAt: '2026-10-15',
 };
 
 export interface NotificationItem {
@@ -117,7 +124,7 @@ export const NOTIFICATIONS: NotificationItem[] = [
   { id:'n5', name:'Ma. Franchesca Mangalindan', action:"Graded: assignment '04 Laboratory Exercise'",     time:'Mar 25, 9:12 am', read:true },
 ];
 
-export const ADVISER = { name: 'Orbase, Albert', announcement: 'No announcements yet.' };
+export const ADVISER = { name: 'Albert Orbase', announcement: 'Please submit your requirements before the deadline.', publishedAt: '2026-10-15' };
 
 //Student profile (Profile page)
 export interface StudentProfile {
