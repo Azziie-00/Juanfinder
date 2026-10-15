@@ -12,6 +12,22 @@ const PAGE_SIZE = 4;
 type GroupApplicationContext = { GroupID: number; GroupName: string; OwnerID: number; FinalizedAt: string | null; MembershipStatus: string };
 type AdviserApplication = { ApplicationID: number; GroupID: number; GroupName: string; Course: string; Applicant: string; Members: string[]; CreatedAt: string };
 const displayRequestError = (error: unknown, fallback: string) => error instanceof ApiResponseError ? error.message : fallback;
+const requirementMimeType = (file: File) => {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension === 'pdf') return 'application/pdf';
+  if (extension === 'doc') return 'application/msword';
+  if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  return '';
+};
+const fileToBase64 = async (file: File) => {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+};
 
 export default function Adviser() {
   const { user, viewRole, effectiveRole } = useAuth();
@@ -22,6 +38,7 @@ export default function Adviser() {
   const [toast, setToast]         = useState('');
   const [loadError, setLoadError] = useState('');
   const [applying, setApplying] = useState(false);
+  const [requirementFile, setRequirementFile] = useState<File | null>(null);
   const [ownGroup, setOwnGroup] = useState<GroupApplicationContext | null>(null);
   const [groupApplication, setGroupApplication] = useState<{ Status: string; AdviserName: string } | null>(null);
   const [incomingApplications, setIncomingApplications] = useState<AdviserApplication[]>([]);
@@ -38,8 +55,8 @@ export default function Adviser() {
         const response = await fetch(`${API_BASE_URL}/advisers`, { headers: authHeaders(user, viewRole) });
         const records = await readApiResponse<{ UserID: number; Name: string; Bio?: string; Gender?: string; Requirements?: string; Course?: string; Availability: number; AssignedGroups?: number; HasCapacity?: boolean }[]>(response, 'Unable to load advisers. Please try again.');
         setAdvisers(records.map(record => ({
-          id: String(record.UserID), name: record.Name, slots: record.AssignedGroups ?? 0, maxSlots: 10,
-          course: record.Course || '', availability: 10, hasCapacity: record.HasCapacity,
+          id: String(record.UserID), name: record.Name, slots: record.AssignedGroups ?? 0, maxSlots: record.Availability,
+          course: record.Course || '', availability: record.Availability, hasCapacity: record.HasCapacity,
           bio: record.Bio || 'No bio provided yet.', gender: record.Gender || '', requirements: record.Requirements ? record.Requirements.split('\n').filter(Boolean) : [],
         })));
         if (effectiveRole === 'student') {
@@ -87,15 +104,28 @@ export default function Adviser() {
     setApplying(true);
     setLoadError('');
     try {
+      const body: { adviserId: number; requirement?: { fileName: string; mimeType: string; data: string } } = {
+        adviserId: Number(modalAdviser.id),
+      };
+      if (requirementFile) {
+        body.requirement = {
+          fileName: requirementFile.name,
+          mimeType: requirementMimeType(requirementFile),
+          data: await fileToBase64(requirementFile),
+        };
+      }
       const response = await fetch(`${API_BASE_URL}/groups/${ownGroup.GroupID}/adviser-applications`, {
         method: 'POST',
         headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ adviserId: Number(modalAdviser.id) }),
+        body: JSON.stringify(body),
       });
       const data = await readApiResponse<{ success?: boolean; application?: { Status: string; AdviserName: string } }>(response, 'Unable to apply for this adviser. Please try again.');
       if (!data.application) throw new ApiResponseError('Unable to apply for this adviser. Please try again.');
       setGroupApplication(data.application);
-      setToast(`Application sent to ${data.application.AdviserName || modalAdviser.name}.`);
+      setToast(requirementFile
+        ? `Application and requirements sent to ${data.application.AdviserName || modalAdviser.name}.`
+        : `Application sent to ${data.application.AdviserName || modalAdviser.name}.`);
+      setRequirementFile(null);
       setModalAdviser(null);
       setTimeout(() => setToast(''), 3000);
     } catch (requestError) {
@@ -194,11 +224,11 @@ export default function Adviser() {
                 <tr><td colSpan={3} className="adv-empty">No active advisers are available.</td></tr>
               ) : slice.map(a => {
                 const assignedGroups = a.slots ?? 0;
-                const hasCapacity = a.hasCapacity ?? assignedGroups < 10;
+                const hasCapacity = a.hasCapacity ?? assignedGroups < a.maxSlots;
                 return (
                   <tr key={a.id}>
                     <td><span className="adv-name-link">{a.name}</span></td>
-                    <td><span className="adv-capacity-value">{Math.max(0, a.maxSlots - assignedGroups)}/10</span></td>
+                    <td><span className="adv-capacity-value">{Math.max(0, a.maxSlots - assignedGroups)}/{a.maxSlots}</span></td>
                     <td>
                       <button
                         className="adv-apply-link"
@@ -260,7 +290,7 @@ export default function Adviser() {
       </Modal>
 
       {/*Apply Modal*/}
-      <Modal show={!!modalAdviser} onHide={() => setModalAdviser(null)} centered className="jf-modal">
+      <Modal show={!!modalAdviser} onHide={() => { setModalAdviser(null); setRequirementFile(null); setLoadError(''); }} centered className="jf-modal">
         {modalAdviser && (
           <>
             <Modal.Header closeButton closeVariant="white" className="flex-column align-items-center">
@@ -277,12 +307,44 @@ export default function Adviser() {
                   ? <ol className="adv-application-requirements">{modalAdviser.requirements.map((requirement, index) => <li key={index}>{requirement}</li>)}</ol>
                   : <p className="adv-application-no-requirements">No additional requirements specified.</p>}
               </div>
+              <div className="adv-requirement-upload">
+                <label className="jf-label" htmlFor="adviser-requirement-file">Application Requirements (optional)</label>
+                <input
+                  id="adviser-requirement-file"
+                  className="form-control"
+                  type="file"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={event => {
+                    const selected = event.currentTarget.files?.[0] || null;
+                    event.currentTarget.value = '';
+                    if (!selected) return;
+                    if (!requirementMimeType(selected)) {
+                      setLoadError('Choose a PDF, DOC, or DOCX requirements file.');
+                      return;
+                    }
+                    if (selected.size === 0 || selected.size > 10 * 1024 * 1024) {
+                      setLoadError('Requirements file must be larger than 0 bytes and no more than 10 MB.');
+                      return;
+                    }
+                    setLoadError('');
+                    setRequirementFile(selected);
+                  }}
+                />
+                {requirementFile && (
+                  <div className="adv-requirement-selected">
+                    <i className="ti ti-file-text" aria-hidden="true" />
+                    <span>{requirementFile.name}</span>
+                    <button type="button" onClick={() => setRequirementFile(null)} disabled={applying}>Remove</button>
+                  </div>
+                )}
+                <small>Upload a PDF or Word document, up to 10 MB.</small>
+              </div>
             </Modal.Body>
             <Modal.Footer className="gap-2">
               <Button className="flex-grow-1" disabled={applying} style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:700, borderRadius:10 }} onClick={() => void confirmApply()}>
                 {applying ? 'Submitting…' : 'Confirm Application'}
               </Button>
-              <Button className="flex-grow-1" style={{ background:'rgba(255,255,255,.08)', border:'none', color:'rgba(255,255,255,.55)', fontWeight:700, borderRadius:10 }} onClick={() => setModalAdviser(null)}>
+              <Button className="flex-grow-1" style={{ background:'rgba(255,255,255,.08)', border:'none', color:'rgba(255,255,255,.55)', fontWeight:700, borderRadius:10 }} onClick={() => { setModalAdviser(null); setRequirementFile(null); }}>
                 Cancel
               </Button>
             </Modal.Footer>

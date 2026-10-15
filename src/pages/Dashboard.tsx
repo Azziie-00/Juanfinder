@@ -368,9 +368,16 @@ export default function Dashboard() {
             <div className="announce-card">
               <div className="announce-head">
                 <div className="adviser-avatar"><i className="ti ti-user"></i></div>
-                <div className="announce-label">Adviser | {ADVISER.name}</div>
+                <div className="announce-title">Announcement</div>
               </div>
-              <div className="announce-body"><div className="announce-msg">{ADVISER.announcement}</div></div>
+              <div className="announce-body">
+                <div className="announce-content">{ADVISER.announcement}</div>
+                <div className="announce-meta">
+                  <span className="announce-meta-label">Announced by:</span>
+                  <span className="announce-meta-value">{ADVISER.name}</span>
+                </div>
+                {ADVISER.publishedAt && <div className="announce-date">Posted {ADVISER.publishedAt}</div>}
+              </div>
             </div>
             <RecommendedGroups key={`${user?.id}:${viewRole}`} unavailable={Boolean(joined)}
               onMatchesChange={setGroups} onJoinGroup={joinGroup} />

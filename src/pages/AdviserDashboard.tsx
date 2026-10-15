@@ -38,7 +38,12 @@ export default function AdviserDashboard() {
   };
 
   const saveAnnouncement = () => {
-    const updated: AdviserAnnouncement = { ...announcement, detail: detailInput || ADVISER_ANNOUNCEMENT.detail };
+    const updated: AdviserAnnouncement = {
+      ...announcement,
+      detail: detailInput || ADVISER_ANNOUNCEMENT.detail,
+      announcerName: announcement.announcerName || ADVISER_ANNOUNCEMENT.announcerName,
+      publishedAt: announcement.publishedAt || ADVISER_ANNOUNCEMENT.publishedAt,
+    };
     setAnnouncement(updated);
     sessionStorage.setItem('jf_adviser_announcement', JSON.stringify(updated));
     setEditOpen(false);
@@ -74,6 +79,15 @@ export default function AdviserDashboard() {
               </div>
               <div className="adv-announce-body">
                 <div className="adv-announce-body-text">{announcement.detail}</div>
+                {announcement.announcerName && (
+                  <div className="adv-announce-meta">
+                    <span className="adv-announce-meta-label">Announced by:</span>
+                    <span className="adv-announce-meta-value">{announcement.announcerName}</span>
+                  </div>
+                )}
+                {announcement.publishedAt && (
+                  <div className="adv-announce-date">Posted {announcement.publishedAt}</div>
+                )}
               </div>
             </div>
           </Col>
