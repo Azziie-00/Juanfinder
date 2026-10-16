@@ -37,15 +37,16 @@ test('both panels remain fixed with long results, scroll by keyboard, and hand o
   await page.goto('/');
   const groups = page.locator('.recommended-groups');
   const advisers = page.locator('.recommended-advisers');
-  for (const panel of [groups, advisers]) expect((await panel.boundingBox()).height).toBe(280);
+  for (const panel of [groups, advisers]) expect((await panel.boundingBox()).height).toBe(180);
+  await page.screenshot({ path: testInfo.outputPath('dashboard-compact-empty.png'), fullPage: true });
   await page.getByRole('button', { name: 'Find my matches' }).click();
   await expect(groups.locator('article')).toHaveCount(3);
   await page.getByRole('button', { name: 'Find my adviser' }).click();
   await expect(advisers.getByRole('button', { name: 'Finding matches…' })).toBeDisabled();
-  expect((await advisers.boundingBox()).height).toBe(280);
+  expect((await advisers.boundingBox()).height).toBe(180);
   await expect(advisers.locator('article')).toHaveCount(3);
   for (const panel of [groups, advisers]) {
-    expect((await panel.boundingBox()).height).toBe(280);
+    expect((await panel.boundingBox()).height).toBe(180);
     const body = panel.locator('.recommendation-panel-body');
     expect(await body.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
     await body.focus(); await page.keyboard.press('End');
@@ -75,7 +76,7 @@ test('retryable error and no-group states preserve panel bounds and browsing', a
   await panel.getByRole('button', { name: 'Find my adviser' }).click();
   await expect(panel.getByRole('alert')).toContainText('temporarily unavailable');
   await expect(panel.getByRole('button', { name: 'Try again' })).toBeEnabled();
-  expect((await panel.boundingBox()).height).toBe(280);
+  expect((await panel.boundingBox()).height).toBe(180);
   await page.route('**/api/advisers/recommendations', route => route.fulfill({ json: { recommendations: [], message: 'Join or create a group before finding an adviser.' } }));
   await panel.getByRole('button', { name: 'Try again' }).click();
   await expect(panel.getByRole('status')).toContainText('Join or create a group');

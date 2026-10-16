@@ -10,7 +10,7 @@ Students must own or be an actual member of a group; pending join requests do no
 
 The backend reads all inputs from saved records, verifies AI IDs and profile excerpts, and rechecks membership, project context, eligibility and capacity after inference. Recommendation requests do not consume or depend on the chat/title-generation quota.
 
-Both Dashboard recommendation panels remain 280px tall. Results and status messages scroll inside the panels, including on mobile; the headings and refresh buttons stay visible.
+Both Dashboard recommendation panels remain 180px tall. Results and status messages scroll inside the panels, including on mobile; the headings and refresh buttons stay visible.
 
 ## Runtime
 

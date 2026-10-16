@@ -80,11 +80,12 @@ export default function RecommendedGroups({ unavailable, onMatchesChange, onJoin
 
   return (
     <section className="groups-card recommended-groups" aria-labelledby="recommended-groups-heading" aria-busy={loading}>
-      <div className="recommended-groups-header">
-        <div>
-          <h2 id="recommended-groups-heading" className="groups-title">Recommended groups <span className="ai-badge">AI-powered</span></h2>
-          <p>Skill matches powered by Llama 3.2 1B</p>
-        </div>
+      <div className="announce-head recommendation-panel-head">
+        <div className="adviser-avatar" aria-hidden="true"><i className="ti ti-users"></i></div>
+        <h2 id="recommended-groups-heading" className="announce-title">Recommended groups <span className="ai-badge">AI-powered</span></h2>
+      </div>
+      <div className="recommendation-toolbar">
+        <p>Powered by Llama 3.2 1B</p>
         {!unavailable && <button className="recommended-groups-action" onClick={() => void loadRecommendations()} disabled={loading || joining !== null}>
           {loading ? 'Finding matches…' : error ? 'Try again' : loaded ? 'Refresh matches' : 'Find my matches'}
         </button>}

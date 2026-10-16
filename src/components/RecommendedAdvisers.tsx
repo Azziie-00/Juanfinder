@@ -44,11 +44,12 @@ export default function RecommendedAdvisers() {
   };
 
   return <section className="adviser-rec-card recommended-advisers" aria-labelledby="recommended-advisers-heading" aria-busy={loading}>
-    <div className="recommended-groups-header">
-      <div>
-        <h2 id="recommended-advisers-heading" className="groups-title">Recommended adviser <span className="ai-badge">AI-powered</span></h2>
-        <p>Project matches powered by Llama 3.2 1B</p>
-      </div>
+    <div className="announce-head recommendation-panel-head">
+      <div className="adviser-avatar" aria-hidden="true"><i className="ti ti-user"></i></div>
+      <h2 id="recommended-advisers-heading" className="announce-title">Recommended adviser <span className="ai-badge">AI-powered</span></h2>
+    </div>
+    <div className="recommendation-toolbar">
+      <p>Powered by Llama 3.2 1B</p>
       <button type="button" className="recommended-groups-action" onClick={() => void findMatches()} disabled={loading}>
         {loading ? 'Finding matches…' : error ? 'Try again' : loaded ? 'Refresh matches' : 'Find my adviser'}
       </button>

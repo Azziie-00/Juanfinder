@@ -9,14 +9,16 @@
 
 /* Skill recommendations in the existing Dashboard panel. */
 .groups-card.recommended-groups, .adviser-rec-card.recommended-advisers {
-  height: 280px; min-height: 280px; max-height: 280px; flex: 0 0 280px;
-  display: flex; flex-direction: column; overflow: hidden; color: var(--navy);
+  height: 180px; min-height: 180px; max-height: 180px; flex: 0 0 180px;
+  display: flex; flex-direction: column; overflow: hidden; color: var(--navy); padding: 0;
 }
-.recommendation-panel-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overflow-wrap: anywhere; scrollbar-gutter: stable; padding: 3px; }
+.recommendation-panel-head { flex-shrink: 0; min-height: 50px; }
+.recommendation-panel-head .announce-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0; }
+.recommendation-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-shrink: 0; padding: 10px 18px 6px; }
+.recommended-groups .recommendation-toolbar p, .recommended-advisers .recommendation-toolbar p { margin: 0; font-size: 11px; min-width: 0; }
+.recommendation-panel-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overflow-wrap: anywhere; scrollbar-gutter: stable; padding: 4px 18px 12px; }
 .recommendation-panel-body:focus-visible { outline: 2px solid var(--navy); outline-offset: -2px; }
-.recommended-groups-header { flex-shrink: 0; }
 .recommended-advisers p { font-size: 12px; margin: 0 0 10px; }
-.recommended-advisers .groups-title { margin: 0 0 6px; flex-wrap: wrap; }
 .recommended-advisers-list { display: grid; gap: 10px; }
 .recommended-advisers .adviser-rec-item { align-items: flex-start; flex-wrap: wrap; }
 .recommended-advisers .adviser-rec-info { flex-basis: 220px; color: #e0eafa; }
@@ -27,11 +29,8 @@
 .recommendation-browse { display: inline-block; margin-top: 10px; font-size: 12px; font-weight: 700; color: var(--navy); }
 .recommended-advisers button:disabled { opacity: .6; cursor: wait; }
 .recommended-advisers button:focus-visible, .recommended-advisers a:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
-.recommended-groups-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-.recommended-groups .groups-title { margin: 0 0 6px; flex-wrap: wrap; }
 .recommended-groups p { font-size: 12px; margin: 0 0 10px; }
-.recommended-groups-header p { margin: 0; }
-.recommended-groups-action { border: 0; background: var(--navy); color: var(--amber); border-radius: 8px; padding: 9px 12px; font-size: 12px; font-weight: 700; }
+.recommended-groups-action { border: 0; background: var(--navy); color: var(--amber); border-radius: 8px; padding: 7px 10px; font-size: 11px; font-weight: 700; flex-shrink: 0; }
 .recommended-groups button:disabled { opacity: .6; cursor: wait; }
 .recommended-groups button:focus-visible, .recommended-groups a:focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; }
 .recommended-groups-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 12px; }
