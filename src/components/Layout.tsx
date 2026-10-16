@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, type ReactNode } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useState, useRef, useEffect, useSyncExternalStore, type ReactNode } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { getInitials } from '../data/datas';
 import { API_BASE_URL } from '../data/api';
@@ -26,15 +26,28 @@ const ADMIN_NAV_LINKS = [
 
 const ROLE_LABEL: Record<string, string> = { student:'Student', adviser:'Adviser', admin:'Admin', superadmin:'Super Admin' };
 
+const mobileQuery = '(max-width: 768px)';
+const subscribeToViewport = (listener: () => void) => {
+  const media = window.matchMedia(mobileQuery);
+  media.addEventListener('change', listener);
+  return () => media.removeEventListener('change', listener);
+};
+const isMobileViewport = () => window.matchMedia(mobileQuery).matches;
+
 export default function Layout({ children, hideSidebar = false }: { children: ReactNode; hideSidebar?: boolean }) {
   const { user, viewRole, effectiveRole, switchViewRole, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isMobile = useSyncExternalStore(subscribeToViewport, isMobileViewport, () => false);
+  const assistantSelected = effectiveRole === 'student' && isMobile && location.pathname === '/'
+    && new URLSearchParams(location.search).get('view') === 'juan-ai';
   const [ddOpen, setDdOpen] = useState(false);
   const ddRef = useRef<HTMLDivElement>(null);
 
   const initials  = getInitials(user?.name || 'JD');
   const roleLabel = ROLE_LABEL[effectiveRole || 'student'] || 'Student';
-  const navLinks  = effectiveRole === 'admin' || effectiveRole === 'superadmin' ? ADMIN_NAV_LINKS : effectiveRole === 'adviser' ? ADVISER_NAV_LINKS : STUDENT_NAV_LINKS;
+  const studentLinks = isMobile ? [...STUDENT_NAV_LINKS, { to: '/?view=juan-ai', icon: 'ti-message-chatbot', label: 'JUAN-AI' }] : STUDENT_NAV_LINKS;
+  const navLinks  = effectiveRole === 'admin' || effectiveRole === 'superadmin' ? ADMIN_NAV_LINKS : effectiveRole === 'adviser' ? ADVISER_NAV_LINKS : studentLinks;
 
   const switchDemoRole = (role: string) => {
     switchViewRole(role === 'superadmin' ? null : role as 'student' | 'adviser' | 'admin');
@@ -70,7 +83,7 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
   }, []);
 
   return (
-    <div className={`app${hideSidebar ? ' app-fullscreen' : ''}`}>
+    <div className={`app${hideSidebar ? ' app-fullscreen' : ''}${assistantSelected ? ' mobile-assistant-active' : ''}`}>
       {!hideSidebar && <aside className="sidebar">
         <div className="logo">
           <div className="logo-system">STI Education System</div>
@@ -78,8 +91,10 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
         </div>
         <nav className="sidebar-nav">
           {navLinks.map(({ to, icon, label }) => (
-            <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
-              <i className={`ti ${icon}`}></i> {label}
+            <NavLink key={to} to={to} end={to === '/'}
+              aria-current={to === '/' && assistantSelected ? false : to === '/?view=juan-ai' && !assistantSelected ? false : undefined}
+              className={({ isActive }) => `nav-item${(to === '/?view=juan-ai' ? assistantSelected : isActive && !(to === '/' && assistantSelected)) ? ' active' : ''}`}>
+              <i className={`ti ${icon}`} aria-hidden="true"></i> {label}
             </NavLink>
           ))}
         </nav>

@@ -13,7 +13,8 @@ async function setup(page, options = {}) {
     if (path === '/notifications') data = { items: [], unreadCount: 0, hasMore: false };
     else if (path === '/dashboard/stats') data = { finder: 37, adviser: 7 };
     else if (path === '/groups') data = [];
-    else if (path === '/ai/chat/status') data = { ai_disabled: true };
+    else if (path === '/ai/chat/status') data = { ai_disabled: options.aiDisabled ?? true };
+    else if (path === '/ai/chat') data = { reply: 'I can help you plan your capstone project.' };
     else if (path === '/groups/recommendations') data = groupMatches;
     else if (path === '/advisers/recommendations') {
       if (options.delay) await new Promise(resolve => setTimeout(resolve, options.delay));
@@ -91,4 +92,56 @@ test('members can see recommendations without an apply action', async ({ page })
   await expect(panel).toContainText('Only your group leader');
   await expect(panel.getByRole('link', { name: 'View adviser', exact: false })).toBeVisible();
   await expect(panel.getByRole('link', { name: 'Review & apply' })).toHaveCount(0);
+});
+
+test('JUAN-AI has a separate mobile tab and retains chat when switching dashboard views', async ({ page, isMobile }, testInfo) => {
+  await setup(page, { aiDisabled: false });
+  await page.goto('/');
+  const assistant = page.getByRole('region', { name: 'JUAN-AI assistant', exact: true });
+  const aiLink = page.getByRole('link', { name: 'JUAN-AI', exact: true });
+  if (!isMobile) {
+    await expect(aiLink).toHaveCount(0);
+    await expect(assistant).toBeVisible();
+    await expect(page.locator('.recommended-groups')).toBeVisible();
+    return;
+  }
+  await expect(assistant).toBeHidden();
+  await expect(aiLink).toBeVisible();
+  await aiLink.click();
+  await expect(page).toHaveURL(/\?view=juan-ai/);
+  await expect(aiLink).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).not.toHaveAttribute('aria-current', 'page');
+  await expect(assistant).toBeVisible();
+  await expect(page.locator('.recommended-groups')).toBeHidden();
+  await expect(page.locator('.dashboard-overview')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Upload CV' })).toBeEnabled();
+  await assistant.getByRole('textbox').fill('Help me plan my project');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(assistant).toContainText('I can help you plan your capstone project.');
+  await page.getByRole('link', { name: 'Dashboard', exact: true }).click();
+  await expect(assistant).toBeHidden();
+  await expect(page.locator('.recommended-groups')).toBeVisible();
+  await aiLink.click();
+  await expect(assistant).toContainText('Help me plan my project');
+  await expect(assistant).toContainText('I can help you plan your capstone project.');
+  await page.screenshot({ path: testInfo.outputPath('mobile-juan-ai.png'), fullPage: true });
+  await page.setViewportSize({ width: 320, height: 500 });
+  const composer = await page.locator('.ai-input-area').boundingBox();
+  const nav = await page.locator('.sidebar').boundingBox();
+  expect(composer.y + composer.height).toBeLessThanOrEqual(nav.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.goBack();
+  await expect(page.locator('.recommended-groups')).toBeVisible();
+  await page.goForward();
+  await expect(assistant).toContainText('Help me plan my project');
+  await page.reload();
+  await expect(assistant).toBeVisible();
+  await expect(page.locator('.recommended-groups')).toBeHidden();
+});
+
+test('the dedicated assistant view respects the existing AI quota', async ({ page }) => {
+  await setup(page);
+  await page.goto('/?view=juan-ai');
+  await expect(page.getByRole('button', { name: 'Upload CV' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Send message' })).toBeDisabled();
 });
