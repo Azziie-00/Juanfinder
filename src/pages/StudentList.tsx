@@ -52,7 +52,7 @@ export default function StudentList() {
 
   return (
     <Layout>
-      <main className="adviser-groups-page">
+      <main className="adviser-groups-page student-members-page">
         <header className="adviser-groups-header">
           <div>
             <div className="admin-eyebrow">ADVISER WORKSPACE</div>
@@ -70,7 +70,7 @@ export default function StudentList() {
           <div className="adviser-groups-card-header">
             <div>
               <h2>Assigned Group Members</h2>
-              <p>Students are listed under their group name.</p>
+              <p>Each student is listed with their group.</p>
             </div>
             <span className="adviser-group-total">{groups.reduce((count, group) => count + group.MemberCount, 0)} students</span>
           </div>
@@ -80,27 +80,18 @@ export default function StudentList() {
             <div className="adviser-groups-state">No group members have been assigned to you yet.</div>
           ) : (
             <div className="adviser-groups-table-wrap">
-              <table className="adviser-groups-table">
+              <table className="adviser-groups-table student-member-table">
                 <thead>
-                  <tr><th>Group Name</th><th>Course</th><th>Group Members</th><th>Member Count</th></tr>
+                  <tr><th>Student</th><th>Group name</th><th>Course</th></tr>
                 </thead>
                 <tbody>
-                  {groups.map(group => (
-                    <tr key={group.GroupID}>
-                      <td><strong>{group.GroupName}</strong></td>
-                      <td>{group.Course || '—'}</td>
-                      <td>
-                        <div className="adviser-group-member-list">
-                          {group.Members.map(member => (
-                            <span className="adviser-group-member" key={member.UserID}>
-                              {member.Name}{member.IsLeader && <small>Leader</small>}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td>{group.MemberCount}</td>
+                  {groups.flatMap(group => group.Members.map(member => (
+                    <tr className="student-member-row" key={`${group.GroupID}-${member.UserID}`}>
+                      <td data-label="Student"><strong>{member.Name}</strong>{member.IsLeader && <small className="student-leader-label">Leader</small>}</td>
+                      <td data-label="Group name">{group.GroupName}</td>
+                      <td data-label="Course">{group.Course || '?'}</td>
                     </tr>
-                  ))}
+                  )))}
                 </tbody>
               </table>
             </div>

@@ -1,5 +1,7 @@
 # JuanFinder
 
+For an existing database with adviser application or slot problems, follow the [adviser workflow repair guide](server/ADVISER_WORKFLOW.md). It includes the confirmed diagnosis, read-only schema/permission checks, and the exact additive SQL order. Do not rerun the sample-account setup below as a repair.
+
 ## Supabase setup
 
 1. Create or select a Supabase project.
@@ -10,6 +12,8 @@
 6. Run [`server/migrations/004_restore_all_adviser_availability.sql`](server/migrations/004_restore_all_adviser_availability.sql) after migration 003 to list active advisers from all courses and allow applications across courses while retaining the existing 10-group default capacity.
 7. Run [`server/migrations/005_adviser_slot_capacity.sql`](server/migrations/005_adviser_slot_capacity.sql) after migration 004. It adds a per-adviser slot capacity (default 10, including for existing advisers) and updates adviser application checks to enforce that configured capacity. Set an adviser's capacity in **Admin → Advisers → Edit User → Adviser Slot Capacity**. Use 0 to stop new applications.
 8. Run [`server/migrations/006_group_adviser_application_requirements.sql`](server/migrations/006_group_adviser_application_requirements.sql) after migration 005 to store metadata for optional group-application requirements files in the private `student-portfolios` bucket.
+
+   Then run [`server/migrations/007_atomic_adviser_assignments.sql`](server/migrations/007_atomic_adviser_assignments.sql) to persist group adviser assignments and enforce atomic acceptance and per-group capacity accounting. Run [`server/migrations/008_match_adviser_group_courses.sql`](server/migrations/008_match_adviser_group_courses.sql) to require matching configured courses for new applications and acceptance while preserving existing accepted assignments. Run [`server/migrations/009_delete_group_adviser_cleanup.sql`](server/migrations/009_delete_group_adviser_cleanup.sql) so admin group deletion also releases its members' adviser assignments. Then run [`server/migrations/010_application_multiple_files.sql`](server/migrations/010_application_multiple_files.sql) to allow up to five application files with a combined 10 MB limit. Finally apply [migration 011](server/migrations/011_notifications_and_application_expiry.sql) for persistent notifications and 24-hour application expiration; verify the scheduler using the [workflow guide](server/ADVISER_WORKFLOW.md). Apply [migration 012](server/migrations/012_adviser_submission_notifications.sql) for selected-adviser submission notifications and secure application/file details.
 9. The first migration creates the private `student-portfolios` Storage bucket. Uploads and previews are mediated by the server using the service-role key; do not make the bucket public or expose that key to the browser. The migration attempts to schedule request/account expiration every five minutes with `pg_cron`. If that extension is unavailable, configure a Supabase scheduled database job to run `SELECT public.expire_juan_finder_records();` every five minutes.
 10. In Supabase Project Settings, copy the project URL and the server-side `service_role` key (or secret API key, if your project uses the newer key format). Keep the key private.
 11. Create `server/.env` from [`server/.env.example`](server/.env.example), then set the project URL and key:
@@ -51,7 +55,7 @@ The frontend and Express API are served from the same Vercel deployment. Set the
 
 Do not set `VITE_API_URL` in Vercel for this same-domain setup. Production API calls use `/api` on the Vercel domain; local development uses `http://localhost:5000`. Save the variables and redeploy so the serverless API receives them. Verify the deployed connection at `https://your-project.vercel.app/api/health/db`.
 
-Run `server/database.sql` and migrations 001, 002, 003, 004, and 005 in order in the Supabase SQL Editor for the project used by both localhost and Vercel; the app does not run schema migrations automatically. Migration 002 introduced the 10-group default capacity check, migration 004 restores the full adviser list across courses, and migration 005 makes that capacity configurable per adviser while preserving the existing default. Configure the scheduled expiration job as described above if `pg_cron` was unavailable.
+For a new installation, run `server/database.sql` and migrations 001 through 012 in order in the Supabase SQL Editor for the project used by both localhost and Vercel; the app does not run schema migrations automatically. For an existing installation, use the [repair guide](server/ADVISER_WORKFLOW.md) and apply missing migrations without rerunning sample-account setup. Migration 005 adds configurable capacity, 006 adds application requirements, and 007 persists adviser assignments and enforces atomic acceptance. Configure the scheduled expiration job as described above if `pg_cron` was unavailable.
 
 Sample accounts created by the SQL script:
 

@@ -1,12 +1,14 @@
-const configuredApiOrigin = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '')
+const configuredApiOrigin = import.meta.env.VITE_API_URL || ''
 const apiOrigin = configuredApiOrigin.replace(/\/+$/, '').replace(/\/api$/i, '')
 
 export const API_BASE_URL = `${apiOrigin}/api`
 
 export class ApiResponseError extends Error {
-  constructor(message: string) {
+  status?: number
+  constructor(message: string, status?: number) {
     super(message)
     this.name = 'ApiResponseError'
+    this.status = status
   }
 }
 
@@ -24,24 +26,24 @@ export async function readApiResponse<T>(response: Response, fallbackMessage: st
     if (import.meta.env.DEV) {
       console.error('API response was not JSON.', { status: response.status, contentType })
     }
-    throw new ApiResponseError(fallbackMessage)
+    throw new ApiResponseError(fallbackMessage, response.status)
   }
 
   let payload: unknown
   try {
     payload = await response.json()
-  } catch (error) {
+  } catch {
     if (import.meta.env.DEV) {
-      console.error('API response contained malformed JSON.', { status: response.status, error })
+      console.error('API response contained malformed JSON.', { status: response.status })
     }
-    throw new ApiResponseError(fallbackMessage)
+    throw new ApiResponseError(fallbackMessage, response.status)
   }
 
   if (!response.ok) {
     const message = payload && typeof payload === 'object' && 'message' in payload
       ? payload.message
       : undefined
-    throw new ApiResponseError(isUserFacingMessage(message) ? message : fallbackMessage)
+    throw new ApiResponseError(isUserFacingMessage(message) ? message : fallbackMessage, response.status)
   }
   return payload as T
 }

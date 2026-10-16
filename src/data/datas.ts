@@ -104,27 +104,10 @@ export interface AdviserAnnouncement {
 }
 export const ADVISER_ANNOUNCEMENT: AdviserAnnouncement = {
   title: 'Announcement',
-  detail: 'Please submit your requirements before the deadline.',
-  announcerName: 'Albert Orbase',
-  publishedAt: '2026-10-15',
+  detail: 'No announcement yet.',
 };
 
-export interface NotificationItem {
-  id: string;
-  name: string;
-  action: string;
-  time: string;
-  read: boolean;
-}
-export const NOTIFICATIONS: NotificationItem[] = [
-  { id:'n1', name:'Ma. Franchesca Mangalindan', action:"Due soon: assignment 'Web Design Presentation'", time:'Mar 28, 7:54 am', read:false },
-  { id:'n2', name:'Jerson Nolasco',              action:"Due soon: assignment '05 Laboratory Exercise'",  time:'Mar 28, 11:04 am', read:false },
-  { id:'n3', name:'Ma. Franchesca Mangalindan', action:"Graded: assignment 'Website Design Activity'",   time:'Mar 26, 8:34 am', read:true },
-  { id:'n4', name:'Ma. Franchesca Mangalindan', action:'You were awarded 100 points',                     time:'Mar 26, 8:00 am', read:true },
-  { id:'n5', name:'Ma. Franchesca Mangalindan', action:"Graded: assignment '04 Laboratory Exercise'",     time:'Mar 25, 9:12 am', read:true },
-];
-
-export const ADVISER = { name: 'Albert Orbase', announcement: 'Please submit your requirements before the deadline.', publishedAt: '2026-10-15' };
+export const ADVISER = { name: '', announcement: 'No announcement yet.', publishedAt: '' };
 
 //Student profile (Profile page)
 export interface StudentProfile {

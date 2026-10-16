@@ -372,10 +372,10 @@ export default function Dashboard() {
               </div>
               <div className="announce-body">
                 <div className="announce-content">{ADVISER.announcement}</div>
-                <div className="announce-meta">
+                {ADVISER.name && <div className="announce-meta">
                   <span className="announce-meta-label">Announced by:</span>
                   <span className="announce-meta-value">{ADVISER.name}</span>
-                </div>
+                </div>}
                 {ADVISER.publishedAt && <div className="announce-date">Posted {ADVISER.publishedAt}</div>}
               </div>
             </div>

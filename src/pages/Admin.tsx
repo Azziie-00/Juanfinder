@@ -260,6 +260,7 @@ export default function Admin() {
         firstName: editUser.FirstName || editUser.Name.trim().split(/\s+/)[0],
         lastName: editUser.LastName || editUser.Name.trim().split(/\s+/).slice(1).join(' '),
         expiresAt: editExpiresAt || null,
+        ...(['student', 'adviser'].includes(editUser.Role) ? { course: editUser.Course || '' } : {}),
         ...(editUser.Role === 'adviser' ? { adviserCapacity: editAdviserCapacity } : {}),
       }),
     });
@@ -276,15 +277,18 @@ export default function Admin() {
   };
 
   const removeGroup = async (group: AdminGroup) => {
-    if (!window.confirm(`Delete ${group.GroupName}?`)) return;
+    if (!window.confirm(`Delete ${group.GroupName}? Its members will be released from this group's adviser so they can form a new group and apply again.`)) return;
     const response = await fetch(`${API}/groups/${group.GroupID}`, {
       method: 'DELETE',
       headers: authHeaders(user, viewRole),
     });
 
-    if (response.ok) {
-      setGroups((current) => current.filter((item) => item.GroupID !== group.GroupID));
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setError(data.message || 'Unable to delete group.');
+      return;
     }
+    await load(page);
   };
 
   const loadGroupMembers = async (group: AdminGroup) => {
@@ -368,7 +372,7 @@ export default function Admin() {
                 <td>{record.Course || '—'}</td>
                 <td>
                   <button className="admin-action" onClick={() => {
-                    setEditUser({ ...record });
+                    setEditUser({ ...record, Course: courses.find(course => course.trim().toLowerCase() === record.Course?.trim().toLowerCase()) || '' });
                     setEditExpiresAt(toLocalDateTime(record.ExpiresAt));
                     setEditAdviserCapacity(String(record.AdviserCapacity ?? 10));
                   }} title="Edit user"><i className="ti ti-edit"></i></button>
@@ -558,7 +562,7 @@ export default function Admin() {
 
               <label>
                 Course
-                <select className="admin-course-select" value={newUser.course} onChange={(event) => setNewUser({ ...newUser, course: event.target.value })}>
+                <select required={(view === 'advisers' || newUser.role === 'adviser')} className="admin-course-select" value={newUser.course} onChange={(event) => setNewUser({ ...newUser, course: event.target.value })}>
                   <option value="">Select course</option>
                   {courses.map((course) => (
                     <option key={course} value={course}>{course}</option>
@@ -630,6 +634,13 @@ export default function Admin() {
                 }} />
               </label>
 
+              {['student', 'adviser'].includes(editUser.Role) && <label>
+                Course
+                <select required className="admin-course-select" value={editUser.Course || ''} onChange={event => setEditUser({ ...editUser, Course: event.target.value })}>
+                  <option value="">Select course</option>
+                  {courses.map(course => <option key={course} value={course}>{course}</option>)}
+                </select>
+              </label>}
               {editUser.Role === 'adviser' && (
                 <label>
                   Adviser Slot Capacity
