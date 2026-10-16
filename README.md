@@ -91,7 +91,7 @@ Verification: `npm run build`, `npm run lint`, `node --test server/group-recomme
 
 ## Recommended advisers with Llama 3.2 1B
 
-Students who belong to a group can select **Dashboard → Recommended adviser → Find my adviser**. The saved group title, description, and selected capstone title are matched against available same-course advisers' profile expertise. Cards explain the fit and link to the existing application process. Recommended Groups uses a larger responsive panel (360–720px); Recommended Adviser stays 180px tall. Both scroll internally.
+Students who belong to a group can select **Dashboard → Recommended adviser → Find my adviser**. The saved group title, description, and selected capstone title are matched against available same-course advisers' profile expertise. Cards explain the fit and link to the existing application process. Recommended Groups displays one group at a time in a 360px panel with Previous/Next navigation; Recommended Adviser stays 180px tall. Long content scrolls internally.
 
 Restart the AI and backend services after updating. See the [adviser recommendation guide](docs/adviser-recommendations.md) for eligibility, model limitations, deployment configuration and validation commands.
 

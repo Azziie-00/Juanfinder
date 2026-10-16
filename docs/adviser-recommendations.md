@@ -10,7 +10,7 @@ Students must own or be an actual member of a group; pending join requests do no
 
 The backend reads all inputs from saved records, verifies AI IDs and profile excerpts, and rechecks membership, project context, eligibility and capacity after inference. Recommendation requests do not consume or depend on the chat/title-generation quota.
 
-Recommended Groups has a responsive height of 360–720px, while Recommended Adviser stays 180px tall. Results scroll inside the panels, with headings and refresh buttons remaining visible. JUAN-AI has a wider desktop column and fills the space between the header and bottom navigation in its dedicated mobile tab.
+Recommended Groups displays one recommendation at a time in a 360px panel. Next appears when another match is available; Previous lets students return to earlier matches. Refresh starts at the first result. Recommended Adviser stays 180px tall. Long content scrolls internally. JUAN-AI aligns with the calendar on desktop and fills the space between the header and bottom navigation in its dedicated mobile tab.
 
 ## Runtime
 

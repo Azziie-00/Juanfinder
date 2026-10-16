@@ -20,6 +20,8 @@ interface RecommendedGroupsProps {
 export default function RecommendedGroups({ unavailable, onMatchesChange, onJoinGroup }: RecommendedGroupsProps) {
   const { user, viewRole } = useAuth();
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [page, setPage] = useState(0);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('Find open groups where your profile skills can contribute.');
   const [error, setError] = useState('');
@@ -39,6 +41,8 @@ export default function RecommendedGroups({ unavailable, onMatchesChange, onJoin
     setLoading(true);
     setError('');
     setRecommendations([]);
+    setPage(0);
+    resultsRef.current?.scrollTo({ top: 0 });
     onMatchesChange([]);
     setJoinError('');
     setNeedsSkills(false);
@@ -90,7 +94,7 @@ export default function RecommendedGroups({ unavailable, onMatchesChange, onJoin
           {loading ? 'Finding matches…' : error ? 'Try again' : loaded ? 'Refresh matches' : 'Find my matches'}
         </button>}
       </div>
-      <div className="recommendation-panel-body" tabIndex={0} role="region" aria-label="Group recommendation results">
+      <div className="recommendation-panel-body" ref={resultsRef} tabIndex={0} role="region" aria-label="Group recommendation results">
       {unavailable ? <div className="recommended-groups-status" role="status">
         <p>You already have a group or a pending join request.</p>
         <Link to="/mygroup">View My Group →</Link>
@@ -101,7 +105,7 @@ export default function RecommendedGroups({ unavailable, onMatchesChange, onJoin
       {needsSkills && <Link to="/profile">Add skills to my profile →</Link>}
       {joinError && <p className="recommended-groups-error" role="alert">{joinError}</p>}
       <div className="recommended-groups-grid">
-        {recommendations.map(({ group, reason, matchedSkills }) => (
+        {recommendations.slice(page, page + 1).map(({ group, reason, matchedSkills }) => (
           <article className="group-card recommended-group-card" key={group.id}>
             <div className="recommended-group-meta">{group.course} · {group.maxMembers - group.members} open {group.maxMembers - group.members === 1 ? 'place' : 'places'}</div>
             <h3>{group.name}</h3>
@@ -118,6 +122,16 @@ export default function RecommendedGroups({ unavailable, onMatchesChange, onJoin
       </div>
       </>}
       </div>
+      {!unavailable && recommendations.length > 1 && <nav className="recommendation-pagination" aria-label="Group recommendations">
+        <button type="button" className="recommended-groups-action" aria-label="Previous recommendation"
+          disabled={page === 0 || joining !== null}
+          onClick={() => { setPage(current => current - 1); setJoinError(''); resultsRef.current?.scrollTo({ top: 0 }); }}>← Previous</button>
+        <span role="status" aria-live="polite">{page + 1} of {recommendations.length}</span>
+        {page < recommendations.length - 1
+          ? <button type="button" className="recommended-groups-action" aria-label="Next recommendation" disabled={joining !== null}
+            onClick={() => { setPage(current => current + 1); setJoinError(''); resultsRef.current?.scrollTo({ top: 0 }); }}>Next →</button>
+          : <span />}
+      </nav>}
     </section>
   );
 }

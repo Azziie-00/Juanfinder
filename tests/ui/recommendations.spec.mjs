@@ -43,7 +43,18 @@ test('both panels remain fixed with long results, scroll by keyboard, and hand o
   expect((await advisers.boundingBox()).height).toBe(180);
   await page.screenshot({ path: testInfo.outputPath('dashboard-compact-empty.png'), fullPage: true });
   await page.getByRole('button', { name: 'Find my matches' }).click();
-  await expect(groups.locator('article')).toHaveCount(3);
+  await expect(groups.locator('article')).toHaveCount(1);
+  await expect(groups.getByRole('heading', { name: 'Research group 1', exact: true })).toBeVisible();
+  await expect(groups.getByRole('button', { name: 'Previous recommendation' })).toBeDisabled();
+  await groups.getByRole('button', { name: 'Next recommendation' }).click();
+  await expect(groups.getByRole('heading', { name: 'Research group 2', exact: true })).toBeVisible();
+  await groups.getByRole('button', { name: 'Next recommendation' }).click();
+  await expect(groups.getByRole('heading', { name: 'Research group 3', exact: true })).toBeVisible();
+  await expect(groups.getByRole('button', { name: 'Next recommendation' })).toHaveCount(0);
+  await groups.getByRole('button', { name: 'Previous recommendation' }).click();
+  await expect(groups.getByRole('heading', { name: 'Research group 2', exact: true })).toBeVisible();
+  await groups.getByRole('button', { name: 'Refresh matches' }).click();
+  await expect(groups.getByRole('heading', { name: 'Research group 1', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Find my adviser' }).click();
   await expect(advisers.getByRole('button', { name: 'Finding matches…' })).toBeDisabled();
   expect((await advisers.boundingBox()).height).toBe(180);
@@ -105,6 +116,10 @@ test('JUAN-AI has a separate mobile tab and retains chat when switching dashboar
     await expect(aiLink).toHaveCount(0);
     await expect(assistant).toBeVisible();
     await expect(page.locator('.recommended-groups')).toBeVisible();
+    const calendarBox = await page.locator('.calendar-card').boundingBox();
+    const assistantBox = await assistant.boundingBox();
+    expect(Math.abs(calendarBox.x - assistantBox.x)).toBeLessThan(1);
+    expect(Math.abs(calendarBox.width - assistantBox.width)).toBeLessThan(1);
     return;
   }
   await expect(assistant).toBeHidden();

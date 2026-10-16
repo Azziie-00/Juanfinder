@@ -124,8 +124,8 @@ a { text-decoration: none; color: inherit; }
   .dashboard-lower-row > .dashboard-assistant-column { position: relative; min-height: 0; }
   .dashboard-lower-row > .dashboard-assistant-column > .ai-panel {
     position: absolute;
-    inset: 0;
-    width: 100%;
+    inset: 0 calc(var(--bs-gutter-x, 1rem) / 2);
+    width: auto;
     height: auto;
     min-height: 0;
     max-height: none;
