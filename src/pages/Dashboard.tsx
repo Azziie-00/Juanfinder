@@ -366,7 +366,7 @@ export default function Dashboard() {
         </Row>
 
         <Row className="g-3 mt-0 dashboard-lower-row">
-          <Col xs={12} lg={8} className="d-flex flex-column gap-3 dashboard-recommendations-column">
+          <Col xs={12} lg={7} className="d-flex flex-column gap-3 dashboard-recommendations-column">
             <div className="announce-card">
               <div className="announce-head">
                 <div className="adviser-avatar"><i className="ti ti-user"></i></div>
@@ -386,7 +386,7 @@ export default function Dashboard() {
             <RecommendedAdvisers key={`advisers:${user?.id}:${viewRole}`} />
           </Col>
 
-          <Col xs={12} lg={4} className="dashboard-assistant-column">
+          <Col xs={12} lg={5} className="dashboard-assistant-column">
             <section className="ai-panel" aria-label="JUAN-AI assistant">
               <div className="ai-panel-title">JUAN-AI Assistant</div>
               {groups.length > 0 && !joined && <div className="ai-recs">

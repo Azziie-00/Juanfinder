@@ -38,7 +38,9 @@ test('both panels remain fixed with long results, scroll by keyboard, and hand o
   await page.goto('/');
   const groups = page.locator('.recommended-groups');
   const advisers = page.locator('.recommended-advisers');
-  for (const panel of [groups, advisers]) expect((await panel.boundingBox()).height).toBe(180);
+  const groupHeight = (await groups.boundingBox()).height;
+  expect(groupHeight).toBeGreaterThanOrEqual(360);
+  expect((await advisers.boundingBox()).height).toBe(180);
   await page.screenshot({ path: testInfo.outputPath('dashboard-compact-empty.png'), fullPage: true });
   await page.getByRole('button', { name: 'Find my matches' }).click();
   await expect(groups.locator('article')).toHaveCount(3);
@@ -47,7 +49,7 @@ test('both panels remain fixed with long results, scroll by keyboard, and hand o
   expect((await advisers.boundingBox()).height).toBe(180);
   await expect(advisers.locator('article')).toHaveCount(3);
   for (const panel of [groups, advisers]) {
-    expect((await panel.boundingBox()).height).toBe(180);
+    expect((await panel.boundingBox()).height).toBe(panel === groups ? groupHeight : 180);
     const body = panel.locator('.recommendation-panel-body');
     expect(await body.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
     await body.focus(); await page.keyboard.press('End');

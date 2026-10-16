@@ -121,8 +121,8 @@ a { text-decoration: none; color: inherit; }
 .dashboard-lower-row > [class*="col-"] { min-width: 0; }
 
 @media (min-width: 992px) {
-  .dashboard-lower-row > .col-lg-4 { position: relative; min-height: 0; }
-  .dashboard-lower-row > .col-lg-4 > .ai-panel {
+  .dashboard-lower-row > .dashboard-assistant-column { position: relative; min-height: 0; }
+  .dashboard-lower-row > .dashboard-assistant-column > .ai-panel {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -263,8 +263,8 @@ a { text-decoration: none; color: inherit; }
 
 /* On tablet/mobile the dashboard columns stack, so give JUAN-AI its own usable height. */
 @media (max-width: 991.98px) {
-  .dashboard-lower-row > .col-lg-4 { position: static; }
-  .dashboard-lower-row > .col-lg-4 > .ai-panel {
+  .dashboard-lower-row > .dashboard-assistant-column { position: static; }
+  .dashboard-lower-row > .dashboard-assistant-column > .ai-panel {
     position: relative;
     inset: auto;
     height: min(760px, calc(100vh - 110px));
