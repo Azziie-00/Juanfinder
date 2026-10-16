@@ -35,6 +35,7 @@ export default function Adviser() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const selectedApplicationId = searchParams.get('application');
+  const recommendedAdviserId = searchParams.get('adviser');
   const [advisers, setAdvisers] = useState<AdviserData[]>([]);
   const [page, setPage]           = useState(1);
   const [modalAdviser, setModalAdviser]   = useState<AdviserData | null>(null);
@@ -87,6 +88,8 @@ export default function Adviser() {
       try {
         const response = await fetch(`${API_BASE_URL}/advisers`, { headers: authHeaders(user, viewRole) });
         const records = await readApiResponse<{ UserID: number; Name: string; Bio?: string; Gender?: string; Requirements?: string; Course?: string; Availability: number; AssignedGroups?: number; HasCapacity?: boolean }[]>(response, 'Unable to load advisers. Please try again.');
+        const recommendedIndex = records.findIndex(record => String(record.UserID) === recommendedAdviserId);
+        if (recommendedIndex >= 0) setPage(Math.floor(recommendedIndex / PAGE_SIZE) + 1);
         setAdvisers(records.map(record => ({
           id: String(record.UserID), name: record.Name, slots: record.AssignedGroups ?? 0, maxSlots: record.Availability,
           course: record.Course || '', availability: record.Availability, hasCapacity: record.HasCapacity,
@@ -121,7 +124,7 @@ export default function Adviser() {
       }
     };
     void load();
-  }, [user, viewRole, effectiveRole, revision]);
+  }, [user, viewRole, effectiveRole, revision, recommendedAdviserId]);
 
   const pages = Math.max(1, Math.ceil(advisers.length / PAGE_SIZE));
   const slice = advisers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -196,6 +199,11 @@ export default function Adviser() {
     <Layout>
       <div className="adviser-body">
         {loadError && <div className="alert alert-danger py-2" role="alert">{loadError}</div>}
+        {recommendedAdviserId && <div className="alert alert-info py-2" role="status">
+          {advisers.some(adviser => adviser.id === recommendedAdviserId)
+            ? 'Your recommended adviser is highlighted below. Review their requirements before applying.'
+            : 'This recommended adviser is no longer available. Please refresh your Dashboard matches.'}
+        </div>}
         {effectiveRole === 'student' && selectedApplicationId && <section className="adviser-applications mb-3" aria-label="Selected application">
           <h2>Application details</h2>
           {selectedError ? <p role="alert">{selectedError}</p> : selectedApplication && String(selectedApplication.ApplicationID) === selectedApplicationId ? <>
@@ -258,8 +266,8 @@ export default function Adviser() {
                   : !matchingCourse ? `Your group course (${ownGroup?.Course || 'not configured'}) must match the adviser course (${a.course}).`
                   : !hasCapacity ? 'This adviser has no remaining slots.' : '');
                 return (
-                  <tr key={a.id}>
-                    <td><span className="adv-name-link">{a.name}</span><div className="small">{a.course || 'Course not configured'}</div></td>
+                  <tr key={a.id} className={a.id === recommendedAdviserId ? 'recommended-adviser-row' : undefined}>
+                    <td><span className="adv-name-link">{a.name}</span>{a.id === recommendedAdviserId && <span className="ai-badge ms-2">Recommended</span>}<div className="small">{a.course || 'Course not configured'}</div></td>
                     <td><span className="adv-capacity-value">{Math.max(0, a.maxSlots - assignedGroups)}/{a.maxSlots}</span></td>
                     <td>
                       <button

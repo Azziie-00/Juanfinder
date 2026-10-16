@@ -73,7 +73,7 @@ Follow [the AI service setup guide](ai-service/README.md). Before using the new 
 
 The AI panel appears on **My Group** for approved members. Each member can upload a PDF, DOCX, or TXT file (maximum 10 MB), analyze it, and save an extracted skills profile. Once profiles have been uploaded, the group can generate title options and save one selected title.
 
-This is a local-development prototype. Scanned PDFs are not supported in this first version, and adviser matching is not yet connected to the title-selection flow. Do not expose the Ollama port or AI service publicly. AI group endpoints require an authenticated session and verify group membership on the server.
+AI group endpoints require an authenticated session and verify group membership on the server. Dashboard adviser matching also uses the selected capstone title when one has been saved. Keep Ollama private and protect any remotely hosted AI service with the shared service token.
 
 ## Recommended groups with Llama 3.2 1B
 
@@ -88,6 +88,12 @@ Students without a group or pending join request can open **Dashboard → Recomm
 Group discovery is independent of the one-time capstone-title quota and does not consume or reset it. Recommendations are generated on demand and are not persisted. For Vercel, configure the shared token and a server-reachable authenticated HTTPS `AI_SERVICE_URL`; localhost cannot reach the AI running on a personal computer. Ensure the hosting request timeout supports the inference duration.
 
 Verification: `npm run build`, `npm run lint`, `node --test server/group-recommendations.test.js`, and (from `ai-service`) `python -m unittest test_group_recommendations.py`.
+
+## Recommended advisers with Llama 3.2 1B
+
+Students who belong to a group can select **Dashboard → Recommended adviser → Find my adviser**. The saved group title, description, and selected capstone title are matched against available same-course advisers' profile expertise. Cards explain the fit and link to the existing application process. Both recommendation panels stay 280px tall and scroll internally.
+
+Restart the AI and backend services after updating. See the [adviser recommendation guide](docs/adviser-recommendations.md) for eligibility, model limitations, deployment configuration and validation commands.
 
 ## Temporary access
 

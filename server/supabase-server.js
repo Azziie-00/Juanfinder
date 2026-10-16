@@ -11,6 +11,7 @@ const { createClient } = require("@supabase/supabase-js");
 const cors = require("cors");
 const { parseApplicationFiles } = require("./application-files");
 const { createRecommendationHandler } = require("./group-recommendations");
+const { createAdviserRecommendationHandler } = require("./adviser-recommendations");
 
 const app = express();
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -471,6 +472,9 @@ app.delete("/api/portfolio/:id", getUser, async (req, res) => {
     if (error) return res.status(500).json({ success: false, message: "Unable to remove portfolio details." });
     res.json({ success: true });
 });
+
+app.post("/api/advisers/recommendations", getUser, requireStudent,
+    createAdviserRecommendationHandler({ supabase, callAIService }));
 
 app.get("/api/advisers", getUser, async (req, res) => {
     const adviserQuery = supabase.from("adviser_slot_availability").select("*").eq("is_active", true).order("name");

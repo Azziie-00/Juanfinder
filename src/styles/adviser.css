@@ -132,3 +132,5 @@
   .adviser-table thead th, .adviser-table tbody td { font-size: 12px; padding: 12px 8px; }
   .adviser-application-card { align-items:flex-start; flex-direction:column; }
 }
+
+.adviser-table .recommended-adviser-row td { background: rgba(255, 205, 56, .12); }

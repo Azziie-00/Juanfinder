@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Row, Col, InputGroup, Form, Spinner } from 'react-bootstrap';
 import Layout from '../components/Layout';
 import Calendar from '../components/Calendar';
 import RecommendedGroups from '../components/RecommendedGroups';
+import RecommendedAdvisers from '../components/RecommendedAdvisers';
 import type { AuthUser, GroupData } from "../data/datas";
 import { useAuth } from '../context/useAuth';
 import { API_BASE_URL } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
-import { ADVISER, AI_CONFIG, ADVISERS } from '../data/datas';
+import { ADVISER, AI_CONFIG } from '../data/datas';
 import '../styles/dashboard.css';
 
 
@@ -117,7 +117,6 @@ async function callAI(
 
 export default function Dashboard() {
   const { user, viewRole } = useAuth();
-  const navigate = useNavigate();
   const firstName = (user?.name || 'Student').trim().split(' ')[0];
   const [groups, setGroups]           = useState<GroupData[]>([]);
   const [joined, setJoined]           = useState<string | null>(null);
@@ -381,17 +380,7 @@ export default function Dashboard() {
             </div>
             <RecommendedGroups key={`${user?.id}:${viewRole}`} unavailable={Boolean(joined)}
               onMatchesChange={setGroups} onJoinGroup={joinGroup} />
-            <div className="adviser-rec-card">
-              <div className="groups-title">Recommended adviser <span className="ai-badge">AI-powered</span></div>
-              <div className="adviser-rec-item">
-                <div className="adviser-rec-avatar"><i className="ti ti-user"></i></div>
-                <div className="adviser-rec-info">
-                  <div className="adviser-rec-name">{ADVISERS[0].name}</div>
-                  <div className="adviser-rec-bio">{ADVISERS[0].bio}</div>
-                </div>
-                <button className="adviser-rec-apply" onClick={() => navigate('/adviser')}>Apply →</button>
-              </div>
-            </div>
+            <RecommendedAdvisers key={`advisers:${user?.id}:${viewRole}`} />
           </Col>
 
           <Col xs={12} lg={4}>

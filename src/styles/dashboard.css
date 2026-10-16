@@ -8,7 +8,25 @@
 .dashboard-content::-webkit-scrollbar-thumb { background: rgba(26,42,74,.2); border-radius: 2px; }
 
 /* Skill recommendations in the existing Dashboard panel. */
-.groups-card.recommended-groups { height: auto; max-height: none; min-height: 280px; flex: 1 0 auto; overflow: visible; color: var(--navy); }
+.groups-card.recommended-groups, .adviser-rec-card.recommended-advisers {
+  height: 280px; min-height: 280px; max-height: 280px; flex: 0 0 280px;
+  display: flex; flex-direction: column; overflow: hidden; color: var(--navy);
+}
+.recommendation-panel-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overflow-wrap: anywhere; scrollbar-gutter: stable; padding: 3px; }
+.recommendation-panel-body:focus-visible { outline: 2px solid var(--navy); outline-offset: -2px; }
+.recommended-groups-header { flex-shrink: 0; }
+.recommended-advisers p { font-size: 12px; margin: 0 0 10px; }
+.recommended-advisers .groups-title { margin: 0 0 6px; flex-wrap: wrap; }
+.recommended-advisers-list { display: grid; gap: 10px; }
+.recommended-advisers .adviser-rec-item { align-items: flex-start; flex-wrap: wrap; }
+.recommended-advisers .adviser-rec-info { flex-basis: 220px; color: #e0eafa; }
+.recommended-advisers .adviser-rec-name { margin: 0 0 6px; }
+.recommended-advisers .adviser-rec-evidence { color: #b8cce7; margin-bottom: 0; }
+.recommended-advisers .adviser-rec-apply { text-decoration: none; }
+.recommended-advisers .recommended-groups-error { color: #701919; font-weight: 600; }
+.recommendation-browse { display: inline-block; margin-top: 10px; font-size: 12px; font-weight: 700; color: var(--navy); }
+.recommended-advisers button:disabled { opacity: .6; cursor: wait; }
+.recommended-advisers button:focus-visible, .recommended-advisers a:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
 .recommended-groups-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .recommended-groups .groups-title { margin: 0 0 6px; flex-wrap: wrap; }
 .recommended-groups p { font-size: 12px; margin: 0 0 10px; }

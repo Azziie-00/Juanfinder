@@ -89,6 +89,7 @@ export default function RecommendedGroups({ unavailable, onMatchesChange, onJoin
           {loading ? 'Finding matches…' : error ? 'Try again' : loaded ? 'Refresh matches' : 'Find my matches'}
         </button>}
       </div>
+      <div className="recommendation-panel-body" tabIndex={0} role="region" aria-label="Group recommendation results">
       {unavailable ? <div className="recommended-groups-status" role="status">
         <p>You already have a group or a pending join request.</p>
         <Link to="/mygroup">View My Group →</Link>
@@ -115,6 +116,7 @@ export default function RecommendedGroups({ unavailable, onMatchesChange, onJoin
         ))}
       </div>
       </>}
+      </div>
     </section>
   );
 }

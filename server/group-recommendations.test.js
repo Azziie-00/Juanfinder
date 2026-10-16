@@ -113,13 +113,19 @@ test('HTTP route enforces bearer authentication and student role, ignoring clien
     const http = require('node:http');
     let role = 'adviser';
     let modelCalls = 0;
+    let adviserMatching = false;
     const upstream = http.createServer(async (req, res) => {
         const url = new URL(req.url, 'http://localhost');
         res.setHeader('Content-Type', 'application/json');
         let data;
         if (url.pathname === '/rest/v1/auth_sessions') data = { user_id: 10, expires_at: '2099-01-01' };
-        else if (url.pathname === '/rest/v1/users') data = { ...student, role, is_active: true };
-        else if (url.pathname === '/rest/v1/groups') data = [group(1)];
+        else if (url.pathname === '/rest/v1/users') data = url.searchParams.get('select') === 'user_id,specialty,skills'
+            ? [{ user_id: 20, specialty: 'Database', skills: ['SQL'] }]
+            : { ...student, role, is_active: true };
+        else if (url.pathname === '/rest/v1/groups') data = [group(1, adviserMatching ? { owner_id: 10, finalized_at: '2026-01-01', description: 'Build a database student portal' } : {})];
+        else if (url.pathname === '/rest/v1/rpc/get_group_adviser_application') data = { application: null };
+        else if (url.pathname === '/rest/v1/ai_capstone_projects') data = { selected_title: 'Student portal' };
+        else if (url.pathname === '/rest/v1/adviser_slot_availability') data = [{ user_id: 20, name: 'Database Adviser', course: 'BSIT', bio: 'Database systems', is_active: true, remaining_slots: 2 }];
         else if (url.pathname === '/rest/v1/group_members' || url.pathname === '/rest/v1/group_join_requests') data = [];
         else if (url.pathname === '/recommend-groups') {
             modelCalls++;
@@ -128,6 +134,15 @@ test('HTTP route enforces bearer authentication and student role, ignoring clien
             assert.deepEqual(JSON.parse(raw).skills, student.skills);
             assert.equal(req.headers['x-ai-service-token'], 'test-shared-secret');
             data = { recommendations: [match(1)] };
+        } else if (url.pathname === '/recommend-advisers') {
+            modelCalls++;
+            let raw = '';
+            for await (const chunk of req) raw += chunk;
+            const payload = JSON.parse(raw);
+            assert.equal(payload.group.title, 'Group 1');
+            assert.equal(payload.group.description, 'Build a database student portal');
+            assert.equal(req.headers['x-ai-service-token'], 'test-shared-secret');
+            data = { recommendations: [{ adviser_id: 20, reason: 'Database expertise fits the portal.', evidence: 'Database' }] };
         } else { res.statusCode = 404; data = {}; }
         res.end(JSON.stringify(data));
     });
@@ -150,6 +165,19 @@ test('HTTP route enforces bearer authentication and student role, ignoring clien
         assert.equal(response.headers.get('cache-control'), 'no-store');
         assert.equal((await response.json()).recommendations[0].group.id, '1');
         assert.equal(modelCalls, 1);
+        adviserMatching = true;
+        const adviserEndpoint = endpoint.replace('/groups/', '/advisers/');
+        assert.equal((await fetch(adviserEndpoint, { method: 'POST' })).status, 401);
+        role = 'adviser';
+        assert.equal((await fetch(adviserEndpoint, { method: 'POST', headers })).status, 403);
+        role = 'student';
+        const adviserResponse = await fetch(adviserEndpoint, { method: 'POST', headers, body: JSON.stringify({ group_id: 999, title: 'Forged title' }) });
+        assert.equal(adviserResponse.status, 200);
+        assert.equal(adviserResponse.headers.get('cache-control'), 'private, no-store');
+        const adviserResult = await adviserResponse.json();
+        assert.equal(adviserResult.recommendations[0].adviser.id, '20');
+        assert.equal(adviserResult.canApply, true);
+        assert.equal(modelCalls, 2);
     } finally {
         if (server) await new Promise(resolve => server.close(resolve));
         await new Promise(resolve => upstream.close(resolve));

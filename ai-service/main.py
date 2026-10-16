@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from document_parser import extract_document
 from ai_service import AIServiceError, OLLAMA_MODEL, analyze_member, chat_reply, generate_cv_titles, generate_titles
 from group_recommendations import recommend_groups
+from adviser_recommendations import recommend_advisers
 from typing import Annotated
 
 app = FastAPI(title="JuanFinder AI Service", version="0.1.0")
@@ -48,6 +49,26 @@ class GroupRecommendationRequest(BaseModel):
 def recommend_groups_endpoint(request: GroupRecommendationRequest):
     try:
         return recommend_groups(request.skills, [group.model_dump() for group in request.groups])
+    except AIServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+class AdviserGroupContext(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    project_title: str = Field(default="", max_length=300)
+    description: str = Field(min_length=1, max_length=1500)
+
+class AdviserCandidate(BaseModel):
+    adviser_id: int = Field(gt=0, strict=True)
+    expertise: str = Field(min_length=1, max_length=1000)
+
+class AdviserRecommendationRequest(BaseModel):
+    group: AdviserGroupContext
+    advisers: list[AdviserCandidate] = Field(min_length=1, max_length=12)
+
+@app.post("/recommend-advisers", dependencies=[Depends(require_ai_service_token)])
+def recommend_advisers_endpoint(request: AdviserRecommendationRequest):
+    try:
+        return recommend_advisers(request.group.model_dump(), [a.model_dump() for a in request.advisers])
     except AIServiceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

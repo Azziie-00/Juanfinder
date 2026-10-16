@@ -4,7 +4,7 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "node --test group-recommendations.test.js adviser-workflow.test.js",
+    "test": "node --test group-recommendations.test.js adviser-workflow.test.js adviser-recommendations.test.js",
     "start": "node server.js"
   },
   "keywords": [],

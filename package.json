@@ -6,7 +6,7 @@
   "scripts": {
     "test:postgres": "node --test server/adviser-races.test.mjs",
     "test:ui": "playwright test",
-    "test": "node --test server/group-recommendations.test.js server/adviser-workflow.test.js",
+    "test": "node --test server/group-recommendations.test.js server/adviser-workflow.test.js server/adviser-recommendations.test.js",
     "dev": "vite",
     "server": "node server/server.js",
     "start": "node server/server.js",
