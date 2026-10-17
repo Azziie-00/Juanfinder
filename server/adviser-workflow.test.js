@@ -16,7 +16,7 @@ const slots = () => db.query('select assigned_groups, remaining_slots from advis
 
 test('dashboard counts assigned groups and unique members, includes legacy owners and scopes student search', () => fixture(async () => {
     await respond(await submit());
-    await db.exec('delete from group_members where user_id=1; update users set adviser_capacity=3 where user_id=10');
+    await db.exec('delete from group_members where user_id=1; update advisers set adviser_capacity=3 where user_id=10');
     const report = await request('/adviser/dashboard?adviserId=11', 10);
     assert.equal(report.status, 200);
     assert.equal(report.body.AdviserName, 'User 10');
@@ -34,19 +34,20 @@ test('dashboard counts assigned groups and unique members, includes legacy owner
     assert.equal((await request('/adviser/dashboard', 1)).status, 403);
     assert.equal((await request('/adviser/dashboard', 99)).status, 401);
     assert.equal((await request('/adviser/dashboard?search=' + 'a'.repeat(201), 10)).status, 400);
-    await db.exec('update users set adviser_capacity=0 where user_id=10');
+    await db.exec('update advisers set adviser_capacity=0 where user_id=10');
     assert.equal((await request('/adviser/dashboard', 10)).body.Summary.AvailableSlots, 0);
     await fails(() => db.exec('SET LOCAL ROLE authenticated; SELECT get_adviser_dashboard_report(10,\'\')'), /permission denied/);
 }));
 
 test('dashboard report has no API page limit and migration reruns preserve assignments', () => fixture(async () => {
-    await db.exec(`update users set adviser_capacity=1200 where user_id=10;
+    await db.exec(`update advisers set adviser_capacity=1200 where user_id=10;
         insert into groups(group_id,group_name,course,adviser_id) select n, 'Report '||n, 'BSIT', 10 from generate_series(100,1200) n`);
     const result = await request('/adviser/dashboard', 10);
     assert.equal(result.body.Groups.length, 1101);
     assert.equal(result.body.Summary.Groups, 1101);
     assert.equal(result.body.Summary.AvailableSlots, 99);
-    await db.exec(migration('014_adviser_dashboard_report.sql'));
+    await db.exec(migration('015_separate_role_profiles.sql')
+        .replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, ''));
     assert.equal((await request('/adviser/dashboard', 10)).body.Groups.length, 1101);
 }));
 
@@ -63,7 +64,7 @@ test('Settings profile APIs persist only permitted fields on the signed-in accou
     assert.equal((await request('/adviser/profile', 10, adviser, 'PATCH')).status, 200);
     assert.equal((await request('/profile', 10)).body.Requirements, 'Research proposal\nSchedule');
     assert.equal((await request('/profile', 11)).body.Bio, '');
-    assert.equal(await scalar('select adviser_capacity from users where user_id=10'), 1);
+    assert.equal(await scalar('select adviser_capacity from advisers where user_id=10'), 1);
     assert.equal((await request('/adviser/profile', 1, adviser, 'PATCH')).status, 403);
     assert.equal((await request('/adviser/profile', 10, { ...adviser, requirements: ['x'.repeat(251)] }, 'PATCH')).status, 400);
 }));
@@ -131,7 +132,10 @@ function sqlTransport() {
         }; } },
         rpc(name, args = {}) {
             if (storage.expiryFails && name === 'expire_group_adviser_applications') return Promise.resolve({ data: null, error: { code: '57014' } });
-            const values = Object.values(args).map(value => value && typeof value === 'object' ? JSON.stringify(value) : value);
+            const values = Object.entries(args).map(([key, value]) =>
+                value && typeof value === 'object' && !(name === 'update_student_profile' && key === 'p_skills')
+                    ? JSON.stringify(value)
+                    : value);
             return run(`select public.${name}(${values.map((_, i) => `$${i + 1}`).join(',')}) as result`, values)
                 .then(r => ({ ...r, data: r.data?.[0].result }));
         },

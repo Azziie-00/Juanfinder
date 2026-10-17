@@ -563,7 +563,7 @@ app.get("/api/adviser/dashboard", getUser, async (req, res) => {
     });
     if (error) {
         console.warn("Adviser dashboard report failed.", { code: error.code || "unknown" });
-        return res.status(503).json({ message: "Your adviser dashboard is temporarily unavailable. Please try again or contact an administrator.", repair: "Apply migrations through 014; see server/ADVISER_WORKFLOW.md." });
+        return res.status(503).json({ message: "Your adviser dashboard is temporarily unavailable. Please try again or contact an administrator.", repair: "Apply migrations through 015; see server/ADVISER_WORKFLOW.md." });
     }
     if (!data) return res.status(403).json({ message: "An adviser account is required." });
     res.set("Cache-Control", "no-store").json(data);
