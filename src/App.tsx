@@ -25,14 +25,19 @@ function Home() {
   return effectiveRole === 'adviser' ? <AdviserDashboard /> : <Dashboard />;
 }
 
+function RootPage() {
+  const { user } = useAuth();
+  return user ? <ProtectedRoute><Home /></ProtectedRoute> : <Login />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/login"    element={<Login />} />
+          <Route path="/login"    element={<Navigate to="/" replace />} />
           <Route path="/change-password" element={<ProtectedRoute><PasswordChange /></ProtectedRoute>} />
-          <Route path="/"         element={<ProtectedRoute><Home /></ProtectedRoute>} />
+          <Route path="/"         element={<RootPage />} />
           <Route path="/finder"   element={<ProtectedRoute roles={['student']}><Finder /></ProtectedRoute>} />
           <Route path="/mygroup"  element={<ProtectedRoute><MyGroup /></ProtectedRoute>} />
           <Route path="/adviser"  element={<ProtectedRoute><Adviser /></ProtectedRoute>} />

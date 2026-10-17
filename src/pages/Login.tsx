@@ -8,13 +8,7 @@ import '../styles/login.css';
 
 type Role = 'student' | 'adviser' | 'admin' | 'superadmin' | 'library';
 
-const ROLE_COLORS: Record<Role, string> = {
-  student: '#2e6da4',
-  adviser: '#2ecc71',
-  admin: '#f59e0b',
-  superadmin: '#ef4444',
-  library: '#8b5cf6'
-};
+const LOGIN_ACCENT = '#2e6da4';
 
 const ROLE_ICONS: Record<Role, string> = {
   student: 'ti-user-circle',
@@ -260,21 +254,21 @@ export default function Login() {
               <div
                 className="lp-role-pill mb-2"
                 style={{
-                  background: `${ROLE_COLORS[role]}20`,
-                  border: `1.5px solid ${ROLE_COLORS[role]}40`,
+                  background: `${LOGIN_ACCENT}20`,
+                  border: `1.5px solid ${LOGIN_ACCENT}40`,
                 }}
               >
                 <i
                   className={`ti ${ROLE_ICONS[role]}`}
                   style={{
-                    color: ROLE_COLORS[role],
+                    color: LOGIN_ACCENT,
                     fontSize: 14,
                   }}
                 ></i>
 
                 <span
                   style={{
-                    color: ROLE_COLORS[role],
+                    color: LOGIN_ACCENT,
                     fontWeight: 700,
                     fontSize: 13,
                   }}
@@ -394,7 +388,7 @@ export default function Login() {
                 <Button
                   className="w-100 fw-bold py-2 mb-2"
                   style={{
-                    background: ROLE_COLORS[role],
+                    background: LOGIN_ACCENT,
                     border: 'none',
                     borderRadius: 12,
                     fontSize: 15,
