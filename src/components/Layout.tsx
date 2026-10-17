@@ -23,7 +23,9 @@ const ADMIN_NAV_LINKS = [
   { to:'/',       icon:'ti-layout-dashboard', label:'Dashboard' },
 ];
 
-const ROLE_LABEL: Record<string, string> = { student:'Student', adviser:'Adviser', admin:'Admin', superadmin:'Super Admin' };
+const LIBRARY_NAV_LINKS = STUDENT_NAV_LINKS;
+
+const ROLE_LABEL: Record<string, string> = { student:'Student', adviser:'Adviser', admin:'Admin', superadmin:'Super Admin', library:'Library' };
 
 export default function Layout({ children, hideSidebar = false }: { children: ReactNode; hideSidebar?: boolean }) {
   const { user, viewRole, effectiveRole, switchViewRole, logout } = useAuth();
@@ -35,12 +37,12 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
 
   const initials  = getInitials(user?.name || 'JD');
   const roleLabel = ROLE_LABEL[effectiveRole || 'student'] || 'Student';
-  const navLinks  = effectiveRole === 'admin' || effectiveRole === 'superadmin' ? ADMIN_NAV_LINKS : effectiveRole === 'adviser' ? ADVISER_NAV_LINKS : STUDENT_NAV_LINKS;
+  const navLinks  = effectiveRole === 'library' ? LIBRARY_NAV_LINKS : effectiveRole === 'admin' || effectiveRole === 'superadmin' ? ADMIN_NAV_LINKS : effectiveRole === 'adviser' ? ADVISER_NAV_LINKS : STUDENT_NAV_LINKS;
   const unreadCount = NOTIFICATIONS.filter(n => !n.read).length;
 
   const switchDemoRole = (role: string) => {
-    switchViewRole(role === 'superadmin' ? null : role as 'student' | 'adviser' | 'admin');
-    navigate('/');
+    switchViewRole(role === 'superadmin' ? null : role as 'student' | 'adviser' | 'admin' | 'library');
+    navigate(role === 'library' ? '/library' : '/');
   };
 
   const signOut = () => {
@@ -108,6 +110,7 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
                   <option value="student">Student</option>
                   <option value="adviser">Adviser</option>
                   <option value="admin">Admin</option>
+                  <option value="library">Library</option>
                 </select>
               </div>
             )}

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 
-export default function ProtectedRoute({ children, roles }: { children: ReactNode; roles?: Array<'student' | 'adviser' | 'admin' | 'superadmin'> }) {
+export default function ProtectedRoute({ children, roles }: { children: ReactNode; roles?: Array<'student' | 'adviser' | 'admin' | 'superadmin' | 'library'> }) {
   const { user, effectiveRole } = useAuth();
   const location = useLocation();
   if (!user) return <Navigate to="/login" replace />;

@@ -19,6 +19,7 @@ import './styles/global.css';
 
 function Home() {
   const { effectiveRole } = useAuth();
+  if (effectiveRole === 'library') return <Library />;
   if (effectiveRole === 'admin' || effectiveRole === 'superadmin') return <Admin />;
   return effectiveRole === 'adviser' ? <AdviserDashboard /> : <Dashboard />;
 }

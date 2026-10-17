@@ -130,7 +130,7 @@ const getUser = async (req, res, next) => {
         req.user = data;
         req.sessionHash = sessionHash;
         const previewRole = req.header("x-view-role");
-        req.effectiveRole = data.role === "superadmin" && process.env.NODE_ENV !== "production" && ["student", "adviser", "admin"].includes(previewRole)
+        req.effectiveRole = data.role === "superadmin" && process.env.NODE_ENV !== "production" && ["student", "adviser", "admin", "library"].includes(previewRole)
             ? previewRole
             : data.role;
         next();
@@ -182,7 +182,7 @@ app.post("/api/login", async (req, res) => {
     try {
         const normalizedLogin = String(username).trim();
         const loginName = normalizedLogin.toLowerCase() === "demo" ? `demo.${role}` : normalizedLogin;
-        const allowedRoles = role === "admin" ? ["admin", "superadmin"] : [role];
+        const allowedRoles = role === "admin" ? ["admin", "superadmin"] : role === "library" ? ["library"] : [role];
         let { data: user, error } = await supabase.from("users").select("*").eq("username", loginName).in("role", allowedRoles).eq("is_active", true).maybeSingle();
         if (error) throw error;
         if (!user) {
@@ -993,7 +993,7 @@ app.post("/api/admin/users/:id/temporary-access", getUser, requireAdmin, async (
 
 app.post("/api/admin/users", getUser, requireAdmin, async (req, res) => {
     const { username, userCode, role, password, course, yearLevel, specialty, skills, adviserId, firstName, lastName, expiresAt } = req.body;
-    const normalizedRole = ["student", "adviser", "admin", "superadmin"].includes(role) ? role : null;
+    const normalizedRole = ["student", "adviser", "admin", "superadmin", "library"].includes(role) ? role : null;
     if (!normalizedRole) return res.status(400).json({ success: false, message: "A valid user role is required." });
 
     const trimmedUserCode = String(userCode ?? '').trim();
@@ -1054,7 +1054,7 @@ app.delete("/api/admin/users/:id", getUser, requireAdmin, async (req, res) => {
 
 app.patch("/api/admin/users/:id", getUser, requireAdmin, async (req, res) => {
     const { username, userCode, role, password, firstName, lastName, expiresAt } = req.body;
-    const normalizedRole = ["student", "adviser", "admin"].includes(role) ? role : null;
+    const normalizedRole = ["student", "adviser", "admin", "library"].includes(role) ? role : null;
     if (!normalizedRole) return res.status(400).json({ success: false, message: "Username, ID, and role are required." });
 
     const trimmedUserCode = String(userCode ?? '').trim();

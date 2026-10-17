@@ -6,27 +6,30 @@ import { useAuth } from '../context/useAuth';
 import type { AuthUser } from '../data/datas';
 import '../styles/login.css';
 
-type Role = 'student' | 'adviser' | 'admin' | 'superadmin';
+type Role = 'student' | 'adviser' | 'admin' | 'superadmin' | 'library';
 
 const ROLE_COLORS: Record<Role, string> = {
   student: '#2e6da4',
   adviser: '#2ecc71',
   admin: '#f59e0b',
-  superadmin: '#ef4444'
+  superadmin: '#ef4444',
+  library: '#8b5cf6'
 };
 
 const ROLE_ICONS: Record<Role, string> = {
   student: 'ti-user-circle',
   adviser: 'ti-user-star',
   admin: 'ti-shield-lock',
-  superadmin: 'ti-shield-star'
+  superadmin: 'ti-shield-star',
+  library: 'ti-books'
 };
 
 const ROLE_LABELS: Record<Role, string> = {
   student: 'Student',
   adviser: 'Adviser',
   admin: 'Admin',
-  superadmin: 'Super Admin'
+  superadmin: 'Super Admin',
+  library: 'Librarian'
 };
 
 const PLACEHOLDERS: Record<Role, string> = {
@@ -34,6 +37,7 @@ const PLACEHOLDERS: Record<Role, string> = {
   adviser: 'e.g. orbase@sti.edu.ph',
   admin: 'e.g. admin, ADMIN-001, or Superadmin',
   superadmin: 'e.g. Superadmin or SUPERADMIN-001',
+  library: 'e.g. library@sti.edu.ph or library-admin',
 };
 
 const FEATURES = [
@@ -239,7 +243,7 @@ export default function Login() {
               <h5 className="lp-modal-title mb-3">Log in</h5>
 
               <div className="d-flex flex-column gap-2">
-                {(['student', 'adviser', 'admin'] as Role[]).map((r) => (
+                {(['student', 'adviser', 'admin', 'library'] as Role[]).map((r) => (
                   <button
                     key={r}
                     className={`lp-role-btn lp-role-${r}`}

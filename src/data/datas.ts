@@ -68,7 +68,7 @@ export interface UserCredential {
 export interface AuthUser {
   name: string;
   id: string;
-  role: 'student' | 'adviser' | 'admin' | 'superadmin';
+  role: 'student' | 'adviser' | 'admin' | 'superadmin' | 'library';
   course?: string;
   sessionToken?: string;
   passwordChangeRequired?: boolean;

@@ -511,6 +511,7 @@ export default function Admin() {
                 <select value={newUser.role} onChange={(event) => setNewUser({ ...newUser, role: event.target.value })}>
                   <option value="student">Student</option>
                   <option value="adviser">Adviser</option>
+                  <option value="librarian">Librarian</option>
                 </select>
               </label>
 
