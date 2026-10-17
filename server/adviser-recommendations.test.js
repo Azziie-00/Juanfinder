@@ -7,7 +7,7 @@ const match = { adviser_id: 10, reason: 'IoT expertise fits your crop sensors.',
 
 function fixture(call = async () => ({ recommendations: [match] })) {
     const state = { groups: [{ ...group }], group_members: [], adviser_slot_availability: [{ ...adviser }],
-        users: [{ user_id: 10, role: 'adviser', specialty: 'IoT', skills: ['Sensors'] }],
+        advisers: [{ user_id: 10, role: 'adviser', specialty: 'IoT', skills: ['Sensors'] }],
         ai_capstone_projects: [{ group_id: 1, selected_title: 'Crop sensor network' }], application: null };
     const failures = new Set();
     const supabase = {
@@ -84,7 +84,7 @@ test('members and unfinalized leaders may view matches but cannot apply', async 
 
 test('capacity, membership, profile, project and application changes during inference remove stale matches', async () => {
     for (const change of [s => { s.adviser_slot_availability[0].remaining_slots = 0; },
-        s => { s.groups[0].owner_id = 2; }, s => { s.users[0].specialty = 'Accounting'; },
+        s => { s.groups[0].owner_id = 2; }, s => { s.advisers[0].specialty = 'Accounting'; },
         s => { s.groups[0].description = 'New project'; }, s => { s.application = { Status: 'Pending' }; }]) {
         const f = fixture(async state => { change(state); return { recommendations: [match] }; });
         await f.run(); assert.deepEqual(f.res.body.recommendations, []);

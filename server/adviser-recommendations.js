@@ -78,7 +78,7 @@ function createAdviserRecommendationHandler({ supabase, callAIService }) {
         if (project.error && !['42P01', 'PGRST205'].includes(project.error.code)) throw new Error('Unable to load the group title.');
         const context = { title: clip(group.group_name, 300), project_title: clip(project.data?.selected_title, 300), description: clip(group.description, 1500) };
         const availability = await readAll('adviser_slot_availability', 'user_id,name,bio,course,is_active,expires_at,remaining_slots', q => q.eq('is_active', true));
-        const profiles = availability.length ? await readAll('users', 'user_id,specialty,skills', q => q.eq('role', 'adviser')) : [];
+        const profiles = availability.length ? await readAll('advisers', 'user_id,specialty,skills') : [];
         const byId = new Map(profiles.map(profile => [Number(profile.user_id), profile]));
         const candidates = eligibleAdvisers(group, availability.map(adviser => {
             const profile = byId.get(Number(adviser.user_id));

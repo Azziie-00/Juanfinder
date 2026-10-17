@@ -38,8 +38,12 @@ async function loadAdviserDashboard(supabase, adviser, search) {
     const idsByGroup = new Map(groups.map(g => [String(g.group_id), new Set(g.owner_id == null ? [] : [String(g.owner_id)])]));
     for (const member of memberships) idsByGroup.get(String(member.group_id))?.add(String(member.user_id));
     const ids = [...new Set([...idsByGroup.values()].flatMap(values => [...values]))];
-    const students = await readBatches(ids, batch => supabase.from('users').select('user_id,user_code,name,course')
+    const students = await readBatches(ids, batch => supabase.from('users').select('user_id,user_code,name')
         .in('user_id', batch).eq('role', 'student').order('user_id'));
+    const profiles = await readBatches(students.map(s => s.user_id), batch => supabase.from('students')
+        .select('user_id,course').in('user_id', batch).order('user_id'));
+    const courses = new Map(profiles.map(s => [String(s.user_id), s.course]));
+    for (const student of students) student.course = courses.get(String(student.user_id));
     const byId = new Map(students.map(s => [String(s.user_id), s]));
     const term = search.trim().toLowerCase();
     const records = groups.map(group => {

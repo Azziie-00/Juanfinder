@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS public.users (
     adviser_id BIGINT REFERENCES public.users(user_id) ON DELETE SET NULL,
     bio TEXT NOT NULL DEFAULT '',
     requirements TEXT NOT NULL DEFAULT '',
-    role TEXT NOT NULL CHECK (role IN ('student', 'adviser', 'admin', 'superadmin')),
+    role TEXT NOT NULL CONSTRAINT users_role_check CHECK (role IN ('student', 'adviser', 'admin', 'superadmin', 'library')),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

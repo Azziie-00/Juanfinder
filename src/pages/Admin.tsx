@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
 import { API_BASE_URL } from '../data/api';
@@ -7,7 +7,6 @@ import '../styles/admin.css';
 
 type AdminUser = { UserID: number; UserCode: string; Username: string; Name: string; FirstName?: string; LastName?: string; Role: string; IsActive: boolean; Status?: string; ExpiresAt?: string | null; CreatedAt: string; Course?: string; AdviserCapacity?: number; AdviseeCount?: number };
 type AdminGroup = { GroupID: number; GroupName: string; Course: string; Status: string; MemberCount: number; MaxMembers: number };
-type AdminPortfolio = { PortfolioID: number; UserID: number; Course: string; Title: string; Category: string; Description: string; FileName: string; FileType: string; FileSize: number; CreatedAt: string; StudentName: string; StudentCode: string };
 type GroupMemberData = {
   group: { GroupID: number; GroupName: string; Finalized: boolean; MaxMembers: number; OwnerID: number };
   members: { UserID: number; UserCode: string; Name: string }[];
@@ -59,17 +58,17 @@ export default function Admin() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [courses, setCourses] = useState<string[]>([]);
-  const [view, setView] = useState<'users' | 'groups' | 'advisers' | 'portfolios'>('users');
+  const [view, setView] = useState<'users' | 'groups' | 'advisers' | 'library'>('users');
   const [courseFilters, setCourseFilters] = useState({ students: '', groups: '', advisers: '' });
-  const [portfolioCourse, setPortfolioCourse] = useState('');
-  const [portfolioResult, setPortfolioResult] = useState<{ course: string; items: AdminPortfolio[] } | null>(null);
-  const [portfolioPreview, setPortfolioPreview] = useState<{ url: string; name: string } | null>(null);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const loadRequestId = useRef(0);
   const [showAddUser, setShowAddUser] = useState(false);
+  const [showAddLibrary, setShowAddLibrary] = useState(false);
+  const [newLibraryAccount, setNewLibraryAccount] = useState({ username: '', password: '' });
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [manageGroup, setManageGroup] = useState<GroupMemberData | null>(null);
   const [temporaryCredential, setTemporaryCredential] = useState<{ name: string; password: string; expiresAt: string } | null>(null);
@@ -91,6 +90,7 @@ export default function Admin() {
   });
 
   const load = useCallback(async (nextPage = 1) => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     setError('');
     try {
@@ -99,10 +99,11 @@ export default function Admin() {
         : view === 'advisers'
           ? courseFilters.advisers
           : courseFilters.students;
-      const courseParam = courseFilter ? `&course=${encodeURIComponent(courseFilter)}` : '';
+      const usersRole = view === 'advisers' ? 'adviser' : view === 'library' ? 'library' : 'student';
+      const courseParam = courseFilter && view !== 'library' ? `&course=${encodeURIComponent(courseFilter)}` : '';
       const [summaryRes, usersRes, groupsRes, coursesRes] = await Promise.all([
         fetch(`${API}/summary`, { headers: authHeaders(user, viewRole) }),
-        fetch(`${API}/users?page=${nextPage}&limit=10&role=${view === 'advisers' ? 'adviser' : 'student'}${courseParam}`, { headers: authHeaders(user, viewRole) }),
+        fetch(`${API}/users?page=${nextPage}&limit=10&role=${usersRole}${courseParam}`, { headers: authHeaders(user, viewRole) }),
         fetch(`${API}/groups${courseFilter ? `?course=${encodeURIComponent(courseFilter)}` : ''}`, { headers: authHeaders(user, viewRole) }),
         fetch(`${API}/courses`, { headers: authHeaders(user, viewRole) }),
       ]);
@@ -113,16 +114,20 @@ export default function Admin() {
 
       const summaryData = await summaryRes.json();
       const userData = await usersRes.json();
+      const groupsData = await groupsRes.json();
+      const coursesData = await coursesRes.json();
+      if (requestId !== loadRequestId.current) return;
       setSummary(summaryData);
       setUsers(userData.items ?? []);
       setPage(userData.page ?? nextPage);
       setTotalPages(Math.max(1, Number(userData.totalPages) || 1));
-      setGroups(await groupsRes.json());
-      setCourses(await coursesRes.json());
+      setGroups(groupsData);
+      setCourses(coursesData);
     } catch (requestError) {
+      if (requestId !== loadRequestId.current) return;
       setError(requestError instanceof Error ? requestError.message : 'Cannot connect to the server.');
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestId.current) setLoading(false);
     }
   }, [user, viewRole, view, courseFilters]);
 
@@ -132,20 +137,6 @@ export default function Admin() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [load]);
-
-  useEffect(() => {
-    if (view !== 'portfolios' || !portfolioCourse) return;
-    let cancelled = false;
-    fetch(`${API_BASE_URL}/portfolio?course=${encodeURIComponent(portfolioCourse)}`, { headers: authHeaders(user, viewRole) })
-      .then(async response => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || 'Unable to load course portfolios.');
-        return data as AdminPortfolio[];
-      })
-      .then(data => { if (!cancelled) setPortfolioResult({ course: portfolioCourse, items: data }); })
-      .catch((requestError: unknown) => { if (!cancelled) setError(requestError instanceof Error ? requestError.message : 'Unable to load course portfolios.'); });
-    return () => { cancelled = true; };
-  }, [view, portfolioCourse, user, viewRole]);
 
   const toggleUser = async (record: AdminUser) => {
     const response = await fetch(`${API}/users/${record.UserID}/status`, {
@@ -206,6 +197,38 @@ export default function Admin() {
 
       setShowAddUser(false);
       setNewUser({ firstName: '', lastName: '', username: '', userCode: '', role: 'student', password: '', course: '', expiresAt: '' });
+      await load(1);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Could not connect to the server.');
+    }
+  };
+
+  const addLibraryAccount = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError('');
+    const username = newLibraryAccount.username.trim();
+    const passwordError = validatePassword(newLibraryAccount.password);
+    if (!username) {
+      setError('Username is required.');
+      return;
+    }
+    if (passwordError) {
+      setError(passwordError);
+      return;
+    }
+    try {
+      const response = await fetch(`${API}/library-users`, {
+        method: 'POST',
+        headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ username, password: newLibraryAccount.password }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.message || `Unable to add library account (HTTP ${response.status}).`);
+        return;
+      }
+      setShowAddLibrary(false);
+      setNewLibraryAccount({ username: '', password: '' });
       await load(1);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Could not connect to the server.');
@@ -322,26 +345,18 @@ export default function Admin() {
     await load(page);
   };
 
-  const previewPortfolio = async (entry: AdminPortfolio) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/portfolio/${entry.PortfolioID}/preview?course=${encodeURIComponent(entry.Course)}`, {
-        headers: authHeaders(user, viewRole),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        setError(data.message || 'Unable to open this portfolio file.');
-        return;
-      }
-      setPortfolioPreview({ url: data.url, name: entry.FileName });
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Unable to open this portfolio file.');
-    }
+  const activeUserRole = view === 'advisers' ? 'adviser' : view === 'library' ? 'library' : 'student';
+  const filteredUsers = users.filter((item) => item.Role === activeUserRole
+    && `${item.Name} ${item.UserCode} ${item.Username}`.toLowerCase().includes(query.toLowerCase()));
+  const switchView = (nextView: typeof view) => {
+    loadRequestId.current += 1;
+    setUsers([]);
+    setLoading(true);
+    setPage(1);
+    setQuery('');
+    setView(nextView);
   };
-
-  const filteredUsers = users.filter((item) => `${item.Name} ${item.UserCode} ${item.Username}`.toLowerCase().includes(query.toLowerCase()));
-  const adviserUsers = users.filter((item) => `${item.Name} ${item.UserCode} ${item.Username}`.toLowerCase().includes(query.toLowerCase()));
   const filteredGroups = groups.filter((item) => `${item.GroupName} ${item.Course} ${item.Status}`.toLowerCase().includes(query.toLowerCase()));
-  const portfolios = portfolioResult?.course === portfolioCourse ? portfolioResult.items : [];
 
   const renderUsersTable = (items: AdminUser[]) => (
     <div className="admin-users-content">
@@ -352,8 +367,8 @@ export default function Admin() {
               <th>ID</th>
               <th>User</th>
               <th>Status</th>
-              <th>Expiration</th>
-              <th>Course</th>
+              {view !== 'library' && <th>Expiration</th>}
+              {view !== 'library' && <th>Course</th>}
               <th>Control</th>
             </tr>
           </thead>
@@ -368,8 +383,8 @@ export default function Admin() {
                 <td>
                   <span className={`admin-status ${record.IsActive ? 'on' : 'off'}`}>{record.Status || (record.IsActive ? 'Active' : 'Disabled')}</span>
                 </td>
-                <td>{record.ExpiresAt ? new Date(record.ExpiresAt).toLocaleString() : 'No expiration'}</td>
-                <td>{record.Course || '—'}</td>
+                {view !== 'library' && <td>{record.ExpiresAt ? new Date(record.ExpiresAt).toLocaleString() : 'No expiration'}</td>}
+                {view !== 'library' && <td>{record.Course || '—'}</td>}
                 <td>
                   <button className="admin-action" onClick={() => {
                     setEditUser({ ...record, Course: courses.find(course => course.trim().toLowerCase() === record.Course?.trim().toLowerCase()) || '' });
@@ -377,7 +392,7 @@ export default function Admin() {
                     setEditAdviserCapacity(String(record.AdviserCapacity ?? 10));
                   }} title="Edit user"><i className="ti ti-edit"></i></button>
                   <button className="admin-action" disabled={record.Status === 'Expired'} onClick={() => void toggleUser(record)}>{record.IsActive ? 'Disable' : 'Enable'}</button>
-                  <button className="admin-action" onClick={() => void issueTemporaryAccess(record)} title="Issue seven-day temporary access"><i className="ti ti-clock"></i></button>
+                  {view !== 'library' && <button className="admin-action" onClick={() => void issueTemporaryAccess(record)} title="Issue seven-day temporary access"><i className="ti ti-clock"></i></button>}
                   <button className="admin-action danger" onClick={() => void removeUser(record)} title="Delete user"><i className="ti ti-trash"></i></button>
                 </td>
               </tr>
@@ -400,8 +415,8 @@ export default function Admin() {
         <div className="admin-heading">
           <div>
             <div className="admin-eyebrow">SYSTEM CONTROL</div>
-            <h1>{view === 'advisers' ? 'Advisers' : view === 'groups' ? 'Groups' : view === 'portfolios' ? 'Student Portfolios' : 'Administration'}</h1>
-            <p>{view === 'advisers' ? 'Manage the adviser accounts shown to students.' : view === 'groups' ? 'Review capstone groups and team health.' : view === 'portfolios' ? 'Review student work within a selected course.' : 'Manage JuanFinder users and capstone groups.'}</p>
+            <h1>{view === 'advisers' ? 'Advisers' : view === 'groups' ? 'Groups' : view === 'library' ? 'Library Accounts' : 'Administration'}</h1>
+            <p>{view === 'advisers' ? 'Manage the adviser accounts shown to students.' : view === 'groups' ? 'Review capstone groups and team health.' : view === 'library' ? 'Manage librarian accounts and their sign-in credentials.' : 'Manage JuanFinder users and capstone groups.'}</p>
           </div>
           <button className="admin-refresh" onClick={() => void load(page)} title="Refresh data"><i className="ti ti-refresh"></i></button>
         </div>
@@ -428,13 +443,13 @@ export default function Admin() {
         <section className="admin-panel">
           <div className="admin-panel-head">
             <div className="admin-tabs">
-              <button className={view === 'users' ? 'active' : ''} onClick={() => setView('users')}><i className="ti ti-users"></i> Students</button>
-              <button className={view === 'groups' ? 'active' : ''} onClick={() => setView('groups')}><i className="ti ti-users-group"></i> Groups</button>
-              <button className={view === 'advisers' ? 'active' : ''} onClick={() => setView('advisers')}><i className="ti ti-school"></i> Advisers</button>
-              <button className={view === 'portfolios' ? 'active' : ''} onClick={() => setView('portfolios')}><i className="ti ti-folder"></i> Portfolios</button>
+              <button className={view === 'users' ? 'active' : ''} onClick={() => switchView('users')}><i className="ti ti-users"></i> Students</button>
+              <button className={view === 'groups' ? 'active' : ''} onClick={() => switchView('groups')}><i className="ti ti-users-group"></i> Groups</button>
+              <button className={view === 'advisers' ? 'active' : ''} onClick={() => switchView('advisers')}><i className="ti ti-school"></i> Advisers</button>
+              <button className={view === 'library' ? 'active' : ''} onClick={() => switchView('library')}><i className="ti ti-books"></i> Library</button>
             </div>
             <div className="admin-panel-actions">
-              {view !== 'portfolios' && (
+              {view !== 'library' && (
                 <select
                   className="admin-course-filter"
                   aria-label="Course filter"
@@ -452,20 +467,17 @@ export default function Admin() {
                   {courses.map((course) => <option key={course} value={course}>{course}</option>)}
                 </select>
               )}
-              {view === 'portfolios' ? (
-                <select className="admin-course-select" aria-label="Select course for portfolio review" value={portfolioCourse} onChange={(event) => setPortfolioCourse(event.target.value)}>
-                  <option value="">Select Course</option>
-                  {courses.map((course) => <option key={course} value={course}>{course}</option>)}
-                </select>
+              {view === 'library' ? (
+                <button className="admin-add" onClick={() => setShowAddLibrary(true)}><i className="ti ti-user-plus"></i> Add Library</button>
               ) : <button className="admin-add" onClick={() => setShowAddUser(true)}><i className="ti ti-user-plus"></i> Add User</button>}
               <div className="admin-search">
                 <i className="ti ti-search"></i>
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={view === 'groups' ? 'Search groups...' : view === 'advisers' ? 'Search advisers...' : view === 'portfolios' ? 'Search portfolios...' : 'Search students...'} />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={view === 'groups' ? 'Search groups...' : view === 'advisers' ? 'Search advisers...' : view === 'library' ? 'Search library accounts...' : 'Search students...'} />
               </div>
             </div>
           </div>
 
-          {loading && view !== 'portfolios' && <div className="admin-loading" role="status">Loading {view === 'groups' ? 'groups' : view === 'advisers' ? 'advisers' : 'students'}…</div>}
+          {loading && <div className="admin-loading" role="status">Loading {view === 'groups' ? 'groups' : view === 'advisers' ? 'advisers' : view === 'library' ? 'library accounts' : 'students'}…</div>}
 
           {view === 'groups' ? (
             <div className="admin-table-wrap">
@@ -498,26 +510,8 @@ export default function Admin() {
               </table>
               {!loading && filteredGroups.length === 0 && <div className="admin-empty">No groups found.</div>}
             </div>
-          ) : view === 'portfolios' ? (
-            <div className="admin-table-wrap">
-              <table className="admin-table">
-                <thead><tr><th>Student</th><th>Course</th><th>Project</th><th>Category</th><th>File</th><th>Uploaded</th><th>Control</th></tr></thead>
-                <tbody>
-                  {portfolios.filter(entry => `${entry.StudentName} ${entry.StudentCode} ${entry.Title} ${entry.Category} ${entry.FileName}`.toLowerCase().includes(query.toLowerCase())).map(entry => (
-                    <tr key={entry.PortfolioID}>
-                      <td><strong>{entry.StudentName}</strong><small>{entry.StudentCode}</small></td>
-                      <td>{entry.Course}</td><td>{entry.Title}</td><td>{entry.Category}</td><td>{entry.FileName}</td>
-                      <td>{new Date(entry.CreatedAt).toLocaleDateString()}</td>
-                      <td><button className="admin-action" onClick={() => void previewPortfolio(entry)} title="Open private portfolio file"><i className="ti ti-eye"></i></button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!loading && portfolioCourse && portfolios.length === 0 && <div className="admin-empty">No portfolios are available for this course.</div>}
-              {!portfolioCourse && <div className="admin-empty">Select a course to review its portfolios.</div>}
-            </div>
           ) : (
-            renderUsersTable(view === 'advisers' ? adviserUsers : filteredUsers)
+            renderUsersTable(filteredUsers)
           )}
         </section>
 
@@ -557,7 +551,6 @@ export default function Admin() {
                 <select value={newUser.role} onChange={(event) => setNewUser({ ...newUser, role: event.target.value })}>
                   <option value="student">Student</option>
                   <option value="adviser">Adviser</option>
-                  <option value="librarian">Librarian</option>
                 </select>
               </label>
 
@@ -591,6 +584,37 @@ export default function Admin() {
               <div className="admin-form-actions">
                 <button type="button" className="admin-cancel" onClick={() => setShowAddUser(false)}>Cancel</button>
                 <button type="submit" className="admin-submit"><i className="ti ti-user-plus"></i> Add User</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {showAddLibrary && (
+          <div className="admin-overlay" onMouseDown={(event) => event.target === event.currentTarget && setShowAddLibrary(false)}>
+            <form className="admin-form" onSubmit={addLibraryAccount}>
+              <div className="admin-form-head">
+                <div>
+                  <div className="admin-eyebrow">LIBRARY ACCESS</div>
+                  <h2>Add Library</h2>
+                </div>
+                <button type="button" className="admin-close" onClick={() => setShowAddLibrary(false)}><i className="ti ti-x"></i></button>
+              </div>
+
+              <label>
+                Username
+                <input required minLength={3} maxLength={120} autoComplete="username" value={newLibraryAccount.username} onChange={(event) => setNewLibraryAccount({ ...newLibraryAccount, username: event.target.value })} />
+              </label>
+
+              <label>
+                Password
+                <input required minLength={8} maxLength={128} type="password" autoComplete="new-password" value={newLibraryAccount.password} onChange={(event) => setNewLibraryAccount({ ...newLibraryAccount, password: event.target.value })} />
+              </label>
+
+              <div className="admin-password-help">Use at least one uppercase letter, one lowercase letter, one number, and one special character. Library accounts do not expire.</div>
+
+              <div className="admin-form-actions">
+                <button type="button" className="admin-cancel" onClick={() => setShowAddLibrary(false)}>Cancel</button>
+                <button type="submit" className="admin-submit"><i className="ti ti-user-plus"></i> Add Library</button>
               </div>
             </form>
           </div>
@@ -743,21 +767,6 @@ export default function Admin() {
           </div>
         )}
 
-        {portfolioPreview && (
-          <div className="admin-overlay" onMouseDown={(event) => event.target === event.currentTarget && setPortfolioPreview(null)}>
-            <section className="admin-form" aria-labelledby="portfolio-preview-heading">
-              <div className="admin-form-head">
-                <div><div className="admin-eyebrow">PRIVATE PORTFOLIO FILE</div><h2 id="portfolio-preview-heading">{portfolioPreview.name}</h2></div>
-                <button type="button" className="admin-close" onClick={() => setPortfolioPreview(null)}><i className="ti ti-x"></i></button>
-              </div>
-              <p>This signed file link is temporary and expires in one minute.</p>
-              <div className="admin-form-actions">
-                <a className="admin-submit" href={portfolioPreview.url} target="_blank" rel="noopener noreferrer">Open file</a>
-                <button type="button" className="admin-cancel" onClick={() => setPortfolioPreview(null)}>Close</button>
-              </div>
-            </section>
-          </div>
-        )}
       </main>
     </Layout>
   );

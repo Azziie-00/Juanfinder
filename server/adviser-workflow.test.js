@@ -52,7 +52,7 @@ test('self-service password changes validate current credentials, persist for al
 }));
 
 test('dashboard without 014 returns the same scoped report, counts, searches and legacy owners', () => fixture(async () => {
-    await db.exec('update users set adviser_capacity=4 where user_id=10');
+    await db.exec('update advisers set adviser_capacity=4 where user_id=10');
     await respond(await submit()); await respond(await submit(2, 3, 11), 11);
     await db.exec('delete from group_members where user_id=1; update groups set adviser_id=10 where group_id=3');
     const expected = (await request('/adviser/dashboard', 10)).body;
@@ -80,9 +80,10 @@ test('dashboard without 014 returns the same scoped report, counts, searches and
 }));
 
 test('dashboard fallback includes every group/student across server row caps and export pages', () => fixture(async () => {
-    await db.exec(`update users set adviser_capacity=1200 where user_id=10;
-        insert into users(user_id,user_code,username,password_hash,name,role,course)
-        select n, 'SID'||lpad(n::text,6,'0'), 'report.user'||n, 'unused', 'Report Student '||n, 'student', 'BSIT' from generate_series(100,1200) n;
+    await db.exec(`update advisers set adviser_capacity=1200 where user_id=10;
+        insert into users(user_id,user_code,username,password_hash,name,role)
+        select n, 'SID'||lpad(n::text,6,'0'), 'report.user'||n, 'unused', 'Report Student '||n, 'student' from generate_series(100,1200) n;
+        update students set course='BSIT' where user_id between 100 and 1200;
         insert into groups(group_id,group_name,course,owner_id,adviser_id) select n, 'Report '||n, 'BSIT', n, 10 from generate_series(100,1200) n;
         insert into group_members(group_id,user_id) select n,n from generate_series(100,1200) n;`);
     await db.exec('drop function get_adviser_dashboard_report(bigint,text)');
@@ -166,7 +167,7 @@ test('expired sessions cannot record activity and session cleanup preserves acco
 
 test('dashboard counts assigned groups and unique members, includes legacy owners and scopes student search', () => fixture(async () => {
     await respond(await submit());
-    await db.exec('delete from group_members where user_id=1; update users set adviser_capacity=3 where user_id=10');
+    await db.exec('delete from group_members where user_id=1; update advisers set adviser_capacity=3 where user_id=10');
     const report = await request('/adviser/dashboard?adviserId=11', 10);
     assert.equal(report.status, 200);
     assert.equal(report.body.AdviserName, 'User 10');
@@ -184,19 +185,20 @@ test('dashboard counts assigned groups and unique members, includes legacy owner
     assert.equal((await request('/adviser/dashboard', 1)).status, 403);
     assert.equal((await request('/adviser/dashboard', 99)).status, 401);
     assert.equal((await request('/adviser/dashboard?search=' + 'a'.repeat(201), 10)).status, 400);
-    await db.exec('update users set adviser_capacity=0 where user_id=10');
+    await db.exec('update advisers set adviser_capacity=0 where user_id=10');
     assert.equal((await request('/adviser/dashboard', 10)).body.Summary.AvailableSlots, 0);
     await fails(() => db.exec('SET LOCAL ROLE authenticated; SELECT get_adviser_dashboard_report(10,\'\')'), /permission denied/);
 }));
 
 test('dashboard report has no API page limit and migration reruns preserve assignments', () => fixture(async () => {
-    await db.exec(`update users set adviser_capacity=1200 where user_id=10;
+    await db.exec(`update advisers set adviser_capacity=1200 where user_id=10;
         insert into groups(group_id,group_name,course,adviser_id) select n, 'Report '||n, 'BSIT', 10 from generate_series(100,1200) n`);
     const result = await request('/adviser/dashboard', 10);
     assert.equal(result.body.Groups.length, 1101);
     assert.equal(result.body.Summary.Groups, 1101);
     assert.equal(result.body.Summary.AvailableSlots, 99);
-    await db.exec(migration('014_adviser_dashboard_report.sql'));
+    await db.exec(migration('015_separate_role_profiles.sql')
+        .replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, ''));
     assert.equal((await request('/adviser/dashboard', 10)).body.Groups.length, 1101);
 }));
 
@@ -233,7 +235,7 @@ test('Settings profile APIs persist only permitted fields on the signed-in accou
     assert.equal((await request('/adviser/profile', 10, adviser, 'PATCH')).status, 200);
     assert.equal((await request('/profile', 10)).body.Requirements, 'Research proposal\nSchedule');
     assert.equal((await request('/profile', 11)).body.Bio, '');
-    assert.equal(await scalar('select adviser_capacity from users where user_id=10'), 1);
+    assert.equal(await scalar('select adviser_capacity from advisers where user_id=10'), 1);
     assert.equal((await request('/adviser/profile', 1, adviser, 'PATCH')).status, 403);
     assert.equal((await request('/adviser/profile', 10, { ...adviser, requirements: ['x'.repeat(251)] }, 'PATCH')).status, 400);
 }));
@@ -302,7 +304,10 @@ function sqlTransport() {
         rpc(name, args = {}) {
             if (storage.dashboardRpcError && name === 'get_adviser_dashboard_report') return Promise.resolve({ data: null, error: storage.dashboardRpcError });
             if (storage.expiryFails && name === 'expire_group_adviser_applications') return Promise.resolve({ data: null, error: { code: '57014' } });
-            const values = Object.values(args).map(value => value && typeof value === 'object' ? JSON.stringify(value) : value);
+            const values = Object.entries(args).map(([key, value]) =>
+                value && typeof value === 'object' && !(name === 'update_student_profile' && key === 'p_skills')
+                    ? JSON.stringify(value)
+                    : value);
             return run(`select public.${name}(${values.map((_, i) => `$${i + 1}`).join(',')}) as result`, values)
                 .then(r => ({ ...r, data: r.data?.[0].result }));
         },
@@ -363,9 +368,11 @@ async function fixture(run) {
     storage.pageCap = null; storage.dashboardRpcError = null;
     storage.files.clear(); storage.removed = []; storage.uploads = 0; storage.failAt = 0; storage.metadataLookupFails = false; storage.expiryFails = false;
     await db.exec(`BEGIN;
-        INSERT INTO users(user_id,user_code,username,password_hash,name,role,course,adviser_capacity)
-        SELECT n, 'code'||n, 'user'||n, 'unused', 'User '||n, CASE WHEN n>=10 THEN 'adviser' ELSE 'student' END,
-            'BSIT', 1 FROM generate_series(1,11) n;
+        INSERT INTO users(user_id,user_code,username,password_hash,name,role)
+        SELECT n, 'code'||n, 'user'||n, 'unused', 'User '||n, CASE WHEN n>=10 THEN 'adviser' ELSE 'student' END
+        FROM generate_series(1,11) n;
+        UPDATE students SET course='BSIT' WHERE user_id BETWEEN 1 AND 9;
+        UPDATE advisers SET course='BSIT', adviser_capacity=1 WHERE user_id BETWEEN 10 AND 11;
         INSERT INTO groups(group_id,group_name,course,owner_id,finalized_at) VALUES
             (1,'First','BSIT',1,now()),(2,'Second','BSIT',3,now()),(3,'Third','BSIT',5,NULL);
         INSERT INTO group_members(group_id,user_id) VALUES (1,1),(1,2),(2,3),(2,4),(3,5);`);
@@ -406,7 +413,7 @@ test('acceptance persists group link, every member and exactly one slot; repeat 
     const id = await submit();
     assert.equal(await respond(id), 'Accepted');
     assert.equal(await scalar('select adviser_id from groups where group_id=1'), 10);
-    assert.equal(await scalar('select count(*)::int from users where user_id in (1,2) and adviser_id=10'), 2);
+    assert.equal(await scalar('select count(*)::int from students where user_id in (1,2) and adviser_id=10'), 2);
     assert.equal(await scalar('select status from group_adviser_applications where application_id=$1', [id]), 'Accepted');
     assert.deepEqual(await slots(), { assigned_groups: 1, remaining_slots: 0 });
     await fails(() => respond(id), /already been processed/);
@@ -416,14 +423,14 @@ test('acceptance persists group link, every member and exactly one slot; repeat 
 test('leader omitted from legacy membership rows is still assigned', () => fixture(async () => {
     await db.exec('delete from group_members where user_id=1');
     await respond(await submit());
-    assert.equal(await scalar('select adviser_id from users where user_id=1'), 10);
+    assert.equal(await scalar('select adviser_id from students where user_id=1'), 10);
     assert.deepEqual(await slots(), { assigned_groups: 1, remaining_slots: 0 });
 }));
 test('rejection consumes no slot, preserves history and allows reapplication', () => fixture(async () => {
     const first = await submit();
     assert.equal(await respond(first, 10, false), 'Rejected');
     assert.deepEqual(await slots(), { assigned_groups: 0, remaining_slots: 1 });
-    assert.equal(await scalar('select adviser_id from users where user_id=1'), null);
+    assert.equal(await scalar('select adviser_id from students where user_id=1'), null);
     const second = await submit(1, 1, 11);
     assert.notEqual(second, first);
     assert.equal(await respond(second, 11), 'Accepted');
@@ -442,7 +449,7 @@ test('last slot: competing pending groups cannot both be accepted; failure is at
     await respond(first);
     await fails(() => respond(second), /no remaining slots/);
     assert.equal(await scalar('select adviser_id from groups where group_id=2'), null);
-    assert.equal(await scalar('select adviser_id from users where user_id=3'), null);
+    assert.equal(await scalar('select adviser_id from students where user_id=3'), null);
     assert.equal(await scalar('select status from group_adviser_applications where application_id=$1', [second]), 'Pending');
     assert.deepEqual(await slots(), { assigned_groups: 1, remaining_slots: 0 });
     assert.equal(await respond(second, 10, false), 'Rejected');
@@ -450,16 +457,16 @@ test('last slot: competing pending groups cannot both be accepted; failure is at
 }));
 test('zero capacity and capacity reduction after submission are enforced', () => fixture(async () => {
     const id = await submit();
-    await db.exec('update users set adviser_capacity=0 where user_id=10');
+    await db.exec('update advisers set adviser_capacity=0 where user_id=10');
     await fails(() => submit(2, 3), /no remaining slots/);
     await fails(() => respond(id), /no remaining slots/);
     assert.equal(await respond(id, 10, false), 'Rejected');
 }));
 test('conflicting member assignment at acceptance rolls back the whole transaction', () => fixture(async () => {
     const id = await submit();
-    await db.exec('update users set adviser_id=11 where user_id=2');
+    await db.exec('update students set adviser_id=11 where user_id=2');
     await fails(() => respond(id), /another adviser/);
-    assert.equal(await scalar('select adviser_id from users where user_id=1'), null);
+    assert.equal(await scalar('select adviser_id from students where user_id=1'), null);
     assert.equal(await scalar('select adviser_id from groups where group_id=1'), null);
     assert.deepEqual(await slots(), { assigned_groups: 0, remaining_slots: 1 });
 }));
@@ -473,7 +480,7 @@ test('optional document metadata failure rolls back the pending application', ()
 test('admin additions inherit adviser and slot count survives membership changes and inactive students', () => fixture(async () => {
     await respond(await submit());
     await db.exec('insert into group_members(group_id,user_id) values(1,6); update users set is_active=false where user_id in(1,2,6); delete from group_members where user_id=2');
-    assert.equal(await scalar('select adviser_id from users where user_id=6'), 10);
+    assert.equal(await scalar('select adviser_id from students where user_id=6'), 10);
     assert.deepEqual(await slots(), { assigned_groups: 1, remaining_slots: 0 });
 }));
 test('anonymous and authenticated roles cannot execute actor-parameter RPCs or read private tables', () => fixture(async () => {
@@ -490,33 +497,34 @@ test('anonymous and authenticated roles cannot execute actor-parameter RPCs or r
 test('migration rerun preserves accepted history, assignments and user/group records', () => fixture(async () => {
     await respond(await submit());
     // Strip transaction boundaries so this rerun remains inside the test rollback.
-    await db.exec(migration('007_atomic_adviser_assignments.sql').replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, ''));
+    await db.exec(migration('015_separate_role_profiles.sql').replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, ''));
     assert.equal(await scalar('select count(*)::int from users'), 11);
+    assert.equal(await scalar('select count(*)::int from students'), 9);
+    assert.equal(await scalar('select count(*)::int from advisers'), 2);
     assert.equal(await scalar('select count(*)::int from groups'), 3);
     assert.equal(await scalar("select count(*)::int from group_adviser_applications where status='Accepted'"), 1);
     assert.deepEqual(await slots(), { assigned_groups: 1, remaining_slots: 0 });
 }));
 
-test('legacy accepted applications and student assignments backfill without changing accounts or membership', () => fixture(async () => {
-    await db.exec("insert into group_adviser_applications(group_id,adviser_id,applicant_id,status) values(1,10,1,'Accepted'); update users set adviser_id=11 where user_id=3");
-    await db.exec(migration('007_atomic_adviser_assignments.sql').replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, ''));
+test('separate student/adviser profiles retain accepted assignments and existing group membership', () => fixture(async () => {
+    await db.exec("insert into group_adviser_applications(group_id,adviser_id,applicant_id,status) values(1,10,1,'Accepted'); update students set adviser_id=10 where user_id in(1,2); update groups set adviser_id=10 where group_id=1; update students set adviser_id=11 where user_id in(3,4); update groups set adviser_id=11 where group_id=2");
     assert.equal(await scalar('select adviser_id from groups where group_id=1'), 10);
     assert.equal(await scalar('select adviser_id from groups where group_id=2'), 11);
-    assert.equal(await scalar('select adviser_id from users where user_id=4'), 11);
+    assert.equal(await scalar('select adviser_id from students where user_id=4'), 11);
     assert.equal(await scalar('select count(*)::int from group_members'), 5);
     assert.equal(await scalar('select count(*)::int from users'), 11);
 }));
-test('migration refuses conflicting legacy assignments without silently changing records', () => fixture(async () => {
-    await db.exec('update users set adviser_id=10 where user_id=1; update users set adviser_id=11 where user_id=2');
-    await fails(() => db.exec(migration('007_atomic_adviser_assignments.sql').replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, '')), /Conflicting legacy/);
+test('group adviser application rejects members with conflicting profile assignments', () => fixture(async () => {
+    await db.exec('update students set adviser_id=10 where user_id=1; update students set adviser_id=11 where user_id=2');
+    await fails(() => submit(), /another adviser/);
     assert.equal(await scalar('select adviser_id from groups where group_id=1'), null);
-    assert.equal(await scalar('select adviser_id from users where user_id=1'), 10);
-    assert.equal(await scalar('select adviser_id from users where user_id=2'), 11);
+    assert.equal(await scalar('select adviser_id from students where user_id=1'), 10);
+    assert.equal(await scalar('select adviser_id from students where user_id=2'), 11);
 }));
 test('assigned members cannot be reassigned independently of their permanent group adviser', () => fixture(async () => {
     await respond(await submit());
-    await fails(() => db.exec('update users set adviser_id=11 where user_id=1'), /permanent group adviser/);
-    await fails(() => db.exec('update users set adviser_id=NULL where user_id=2'), /permanent group adviser/);
+    await fails(() => db.exec('update students set adviser_id=11 where user_id=1'), /permanent group adviser/);
+    await fails(() => db.exec('update students set adviser_id=NULL where user_id=2'), /permanent group adviser/);
     assert.deepEqual(await slots(), { assigned_groups: 1, remaining_slots: 0 });
 }));
 
@@ -564,7 +572,7 @@ test('HTTP duplicate requests and competing accepts enforce uniqueness and capac
 }));
 
 test('matching adviser/group courses ignore case and surrounding whitespace in SQL and API', () => fixture(async () => {
-    await db.query('update users set course=$1 where user_id=10', [' \tbsit\r\n']);
+    await db.query('update advisers set course=$1 where user_id=10', [' \tbsit\r\n']);
     await db.query('update groups set course=$1 where group_id=1', [' \tbSiT\r\n']);
     const response = await request('/groups/1/adviser-applications', 1, { adviserId: 10 });
     assert.equal(response.status, 201);
@@ -572,7 +580,7 @@ test('matching adviser/group courses ignore case and surrounding whitespace in S
 }));
 test('different, blank, Unspecified and null adviser courses are rejected by SQL and direct API submission', () => fixture(async () => {
     for (const course of ['BSCS', '', ' \t ', ' UnSpEcIfIeD ']) {
-        await db.query('update users set course=$1 where user_id=10', [course]);
+        await db.query('update advisers set course=$1 where user_id=10', [course]);
         await fails(() => submit(), /adviser course must match/);
         const response = await request('/groups/1/adviser-applications', 1, { adviserId: 10, course: 'BSIT' });
         assert.equal(response.status, 409);
@@ -582,9 +590,9 @@ test('different, blank, Unspecified and null adviser courses are rejected by SQL
 }));
 test('course changes after submission block acceptance in SQL/API, preserve Pending and slots, and permit rejection', () => fixture(async () => {
     for (const course of ['BSCS', '', 'Unspecified']) {
-        await db.exec("update users set course='BSIT' where user_id=10");
+        await db.exec("update advisers set course='BSIT' where user_id=10");
         const id = await submit();
-        await db.query('update users set course=$1 where user_id=10', [course]);
+        await db.query('update advisers set course=$1 where user_id=10', [course]);
         await fails(() => respond(id), /adviser course must match/);
         assert.equal((await request(`/adviser/applications/${id}/respond`, 10, { action: 'accept' })).status, 409);
         assert.equal(await scalar('select status from group_adviser_applications where application_id=$1', [id]), 'Pending');
@@ -594,10 +602,11 @@ test('course changes after submission block acceptance in SQL/API, preserve Pend
 }));
 test('008 preserves existing accepted assignments even when the adviser course differs', () => fixture(async () => {
     await respond(await submit());
-    await db.exec("update users set course='BSCS' where user_id=10");
+    await db.exec("update advisers set course='BSCS' where user_id=10");
     await db.exec(migration('008_match_adviser_group_courses.sql').replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, ''));
+    await db.exec(migration('015_separate_role_profiles.sql').replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, ''));
     assert.equal(await scalar('select adviser_id from groups where group_id=1'), 10);
-    assert.equal(await scalar('select count(*)::int from users where user_id in (1,2) and adviser_id=10'), 2);
+    assert.equal(await scalar('select count(*)::int from students where user_id in (1,2) and adviser_id=10'), 2);
     assert.equal(await scalar("select count(*)::int from group_adviser_applications where status='Accepted'"), 1);
     assert.equal((await request('/adviser/groups', 10)).body.length, 1);
     assert.deepEqual(await slots(), { assigned_groups: 1, remaining_slots: 0 });
@@ -609,7 +618,7 @@ test('a group course changed after submission is rechecked on SQL/API acceptance
     await fails(() => respond(id), /adviser course must match/);
     assert.equal((await request(`/adviser/applications/${id}/respond`, 10, { action: 'accept' })).status, 409);
     assert.equal(await scalar('select adviser_id from groups where group_id=1'), null);
-    assert.equal(await scalar('select adviser_id from users where user_id=1'), null);
+    assert.equal(await scalar('select adviser_id from students where user_id=1'), null);
     assert.equal(await scalar('select status from group_adviser_applications where application_id=$1', [id]), 'Pending');
     assert.equal(await respond(id, 10, false), 'Rejected');
 }));
@@ -620,13 +629,22 @@ test('admin-created BSCS adviser retains its selected course instead of defaulti
     const response = await request('/admin/users', 9, { ...adviserAccount, course: ' bScS ' });
     assert.equal(response.status, 201);
     assert.equal(response.body.user.Course, 'BSCS');
-    assert.equal(await scalar('select course from users where user_id=$1', [response.body.user.UserID]), 'BSCS');
+    assert.equal(await scalar('select course from advisers where user_id=$1', [response.body.user.UserID]), 'BSCS');
+}));
+test('Library account endpoint creates an unexpired identity and librarian profile', () => fixture(async () => {
+    await db.exec("update users set role='admin' where user_id=9");
+    const response = await request('/admin/library-users', 9, { username: 'new.librarian', password: 'StrongPass123!' });
+    assert.equal(response.status, 201);
+    const userId = response.body.user.UserID;
+    assert.equal(await scalar('select role from users where user_id=$1', [userId]), 'library');
+    assert.equal(await scalar('select expires_at from users where user_id=$1', [userId]), null);
+    assert.equal(await scalar('select count(*)::int from librarians where user_id=$1', [userId]), 1);
 }));
 test('admin can configure an existing Unspecified adviser as BSCS and the BSCS group can then apply', () => fixture(async () => {
-    await db.exec("update users set role='admin' where user_id=9; update users set course='Unspecified' where user_id=10; update groups set course='BSCS' where group_id=1; update users set course='BSCS' where user_id in(1,2)");
+    await db.exec("update users set role='admin' where user_id=9; update advisers set course='Unspecified' where user_id=10; update groups set course='BSCS' where group_id=1; update students set course='BSCS' where user_id in(1,2)");
     const response = await request('/admin/users/10', 9, { ...adviserAccount, password: '', course: 'bscs', adviserCapacity: 1 }, 'PATCH');
     assert.equal(response.status, 200);
-    assert.equal(await scalar('select course from users where user_id=10'), 'BSCS');
+    assert.equal(await scalar('select course from advisers where user_id=10'), 'BSCS');
     assert.equal((await request('/groups/1/adviser-applications', 1, { adviserId: 10 })).status, 201);
     assert.equal(await scalar('select count(*)::int from users'), 11);
 }));
@@ -637,11 +655,11 @@ test('invalid adviser courses and unauthorized edits cannot change account confi
         assert.equal((await request('/admin/users/10', 9, { ...adviserAccount, password: '', course }, 'PATCH')).status, 400);
     }
     assert.equal((await request('/admin/users/10', 1, { ...adviserAccount, password: '', course: 'BSCS' }, 'PATCH')).status, 403);
-    assert.equal(await scalar('select course from users where user_id=10'), 'BSIT');
+    assert.equal(await scalar('select course from advisers where user_id=10'), 'BSIT');
 }));
 
 test('admin group deletion releases leader and members, returns the slot, and preserves unrelated students', () => fixture(async () => {
-    await db.exec("update users set role='admin' where user_id=9; update users set adviser_id=11 where user_id=6");
+    await db.exec("update users set role='admin' where user_id=9; update students set adviser_id=11 where user_id=6");
     await respond(await submit());
     // Include an owner who is missing from membership rows.
     await db.exec('delete from group_members where user_id=1');
@@ -649,13 +667,13 @@ test('admin group deletion releases leader and members, returns the slot, and pr
     assert.equal(await scalar('select count(*)::int from groups where group_id=1'), 0);
     assert.equal(await scalar('select count(*)::int from group_members where group_id=1'), 0);
     assert.equal(await scalar('select count(*)::int from group_adviser_applications where group_id=1'), 0);
-    assert.equal(await scalar('select count(*)::int from users where user_id in(1,2) and adviser_id is null'), 2);
-    assert.equal(await scalar('select adviser_id from users where user_id=6'), 11);
+    assert.equal(await scalar('select count(*)::int from students where user_id in(1,2) and adviser_id is null'), 2);
+    assert.equal(await scalar('select adviser_id from students where user_id=6'), 11);
     assert.equal(await scalar('select count(*)::int from users'), 11);
     assert.deepEqual(await slots(), { assigned_groups: 0, remaining_slots: 1 });
 }));
 test('deleting a legacy group clears old member adviser links so a new group can apply to another adviser', () => fixture(async () => {
-    await db.exec("update users set role='admin' where user_id=9; update users set adviser_id=11 where user_id in(1,2)");
+    await db.exec("update users set role='admin' where user_id=9; update students set adviser_id=11 where user_id in(1,2)");
     assert.equal((await request('/admin/groups/1', 9, undefined, 'DELETE')).status, 200);
     await db.exec("insert into groups(group_id,group_name,course,owner_id,finalized_at) values(4,'New group','BSIT',1,now()); insert into group_members(group_id,user_id) values(4,1),(4,2)");
     const response = await request('/groups/4/adviser-applications', 1, { adviserId: 10 });
@@ -663,12 +681,12 @@ test('deleting a legacy group clears old member adviser links so a new group can
     assert.equal((await request(`/adviser/applications/${response.body.application.ApplicationID}/respond`, 10, { action: 'accept' })).status, 200);
 }));
 test('group deletion is authorized and validates missing/invalid groups without changing student assignments', () => fixture(async () => {
-    await db.exec("update users set role='admin' where user_id=9; update users set adviser_id=10 where user_id=1");
+    await db.exec("update users set role='admin' where user_id=9; update students set adviser_id=10 where user_id=1");
     assert.equal((await request('/admin/groups/1', 1, undefined, 'DELETE')).status, 403);
     await fails(() => scalar('select admin_delete_group(1,1)'), /Admin access is required/);
     assert.equal((await request('/admin/groups/nope', 9, undefined, 'DELETE')).status, 400);
     assert.equal((await request('/admin/groups/999', 9, undefined, 'DELETE')).status, 404);
-    assert.equal(await scalar('select adviser_id from users where user_id=1'), 10);
+    assert.equal(await scalar('select adviser_id from students where user_id=1'), 10);
     for (const role of ['anon', 'authenticated']) assert.equal(await scalar("select has_function_privilege($1, 'admin_delete_group(bigint,bigint)', 'EXECUTE')", [role]), false);
 }));
 
@@ -814,8 +832,6 @@ test('submission notifies only the selected adviser once with actual group and u
     assert.deepEqual((await request('/notifications', 1)).body.items, []);
     assert.equal((await request('/groups/1/adviser-applications', 1, { adviserId: 10 })).status, 409);
     assert.equal((await request('/notifications', 10)).body.items.length, 1);
-    const sql = migration('012_adviser_submission_notifications.sql').replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, '');
-    await db.exec(sql); await db.exec(sql);
     assert.equal((await request('/notifications', 10)).body.items.length, 1);
 }));
 
@@ -843,13 +859,13 @@ test('adviser details confirm zero, one and multiple application files and enfor
 test('adviser notification actions recheck ownership, course, slots, status and expiration', () => fixture(async () => {
     const id = await submit();
     assert.equal((await request(`/adviser/applications/${id}/respond`, 11, { action: 'accept' })).status, 403);
-    await db.exec("update users set course='BSCS' where user_id=10");
+    await db.exec("update advisers set course='BSCS' where user_id=10");
     assert.equal((await request('/notifications', 10)).body.items[0].application.CanAccept, false);
     assert.equal((await request(`/adviser/applications/${id}/respond`, 10, { action: 'accept' })).status, 409);
-    await db.exec("update users set course='BSIT', adviser_capacity=0 where user_id=10");
+    await db.exec("update advisers set course='BSIT', adviser_capacity=0 where user_id=10");
     assert.equal((await request('/notifications', 10)).body.items[0].application.CanAccept, false);
     assert.equal((await request(`/adviser/applications/${id}/respond`, 10, { action: 'accept' })).status, 409);
-    await db.exec('update users set adviser_capacity=1 where user_id=10');
+    await db.exec('update advisers set adviser_capacity=1 where user_id=10');
     assert.equal((await request(`/adviser/applications/${id}/respond`, 10, { action: 'accept' })).status, 200);
     const accepted = (await request('/notifications', 10)).body.items[0].application;
     assert.equal(accepted.Status, 'Accepted'); assert.equal(accepted.CanAccept, false);
@@ -874,18 +890,14 @@ test('missing application upload metadata fails lookup instead of reporting zero
     assert.equal(inbox.body.items, undefined);
 }));
 
-test('012 backfills only real unexpired pending submissions once and preserves all records', () => fixture(async () => {
-    await db.exec('drop trigger notify_adviser_application_submission on group_adviser_applications');
+test('015 profile migration rerun preserves existing applications and notifications', () => fixture(async () => {
     const id = await submit();
-    await overdueApplication(2, 3);
-    await db.exec("insert into group_adviser_applications(group_id,applicant_id,adviser_id,status) values(3,5,11,'Rejected')");
-    const sql = migration('012_adviser_submission_notifications.sql').replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, '');
-    await db.exec(sql); await db.exec(sql);
-    assert.equal(await scalar('select count(*)::int from notifications'), 1);
-    const event = (await db.query('select application_id,recipient_id,created_at from notifications')).rows[0];
-    assert.equal(event.application_id, id); assert.equal(event.recipient_id, 10);
-    assert.deepEqual(event.created_at, await scalar('select created_at from group_adviser_applications where application_id=$1', [id]));
-    assert.equal(await scalar('select count(*)::int from group_adviser_applications'), 3);
+    await respond(id);
+    const before = (await db.query('select notification_id,application_id,recipient_id,created_at from notifications where application_id=$1', [id])).rows;
+    await db.exec(migration('015_separate_role_profiles.sql').replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, ''));
+    const after = (await db.query('select notification_id,application_id,recipient_id,created_at from notifications where application_id=$1', [id])).rows;
+    assert.deepEqual(after, before);
+    assert.equal(await scalar("select count(*)::int from group_adviser_applications where status='Accepted'"), 1);
     assert.equal(await scalar('select count(*)::int from users'), 11);
     assert.equal(await scalar('select count(*)::int from groups'), 3);
 }));
@@ -981,7 +993,7 @@ test('notification pagination keeps an exact unread count and mark-all changes o
 }));
 test('acceptance notification rolls back if a later member assignment fails', () => fixture(async () => {
     const id = await submit();
-    await db.exec("create function public.test_fail_assignment() returns trigger language plpgsql as $$ begin if NEW.adviser_id is not null then raise exception 'test assignment rollback'; end if; return NEW; end $$; create trigger test_fail_assignment before update of adviser_id on users for each row execute function public.test_fail_assignment()");
+    await db.exec("create function public.test_fail_assignment() returns trigger language plpgsql as $$ begin if NEW.adviser_id is not null then raise exception 'test assignment rollback'; end if; return NEW; end $$; create trigger test_fail_assignment before update of adviser_id on students for each row execute function public.test_fail_assignment()");
     await fails(() => respond(id), /test assignment rollback/);
     assert.equal(await scalar('select count(*)::int from notifications where recipient_id < 10'), 0);
     assert.equal(await scalar('select status from group_adviser_applications where application_id=$1', [id]), 'Pending');
@@ -994,7 +1006,7 @@ test('migration backfills original deadlines, expires old Pending rows once and 
     await db.exec('drop trigger guard_adviser_application_deadline on group_adviser_applications; alter table group_adviser_applications alter column expires_at drop not null');
     await db.query("update group_adviser_applications set created_at=clock_timestamp()-interval '25 hours',expires_at=null where application_id=$1", [first]);
     await db.query("update group_adviser_applications set created_at=clock_timestamp()-interval '12 hours',expires_at=null where application_id=$1", [second]);
-    await db.exec("update users set adviser_id=11 where user_id=5; update groups set adviser_id=11,finalized_at=clock_timestamp() where group_id=3; insert into group_adviser_applications(group_id,applicant_id,adviser_id,status,created_at) values(3,5,11,'Accepted',clock_timestamp()-interval '3 days')");
+    await db.exec("update students set adviser_id=11 where user_id=5; update groups set adviser_id=11,finalized_at=clock_timestamp() where group_id=3; insert into group_adviser_applications(group_id,applicant_id,adviser_id,status,created_at) values(3,5,11,'Accepted',clock_timestamp()-interval '3 days')");
     const oldCreated = await scalar('select created_at::text from group_adviser_applications where application_id=$1', [first]);
     const sql = migration('011_notifications_and_application_expiry.sql').replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, '');
     await db.exec(sql); await db.exec(sql);
@@ -1004,7 +1016,7 @@ test('migration backfills original deadlines, expires old Pending rows once and 
     assert.equal(await scalar('select status from group_adviser_applications where application_id=$1', [second]), 'Pending');
     assert.equal(await scalar('select count(*)::int from notifications where recipient_id < 10'), 1);
     assert.equal(await scalar('select adviser_id from groups where group_id=3'), 11);
-    assert.equal(await scalar('select adviser_id from users where user_id=5'), 11);
+    assert.equal(await scalar('select adviser_id from students where user_id=5'), 11);
     assert.equal(await scalar('select count(*)::int from users'), 11);
 }));
 

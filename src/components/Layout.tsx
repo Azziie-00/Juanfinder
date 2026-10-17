@@ -25,8 +25,6 @@ const ADMIN_NAV_LINKS = [
   { to:'/',       icon:'ti-layout-dashboard', label:'Dashboard' },
 ];
 
-const LIBRARY_NAV_LINKS = STUDENT_NAV_LINKS;
-
 const ROLE_LABEL: Record<string, string> = { student:'Student', adviser:'Adviser', admin:'Admin', superadmin:'Super Admin', library:'Library' };
 
 const mobileQuery = '(max-width: 768px)';
@@ -45,6 +43,7 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
   const isMobile = useSyncExternalStore(subscribeToViewport, isMobileViewport, () => false);
   const assistantSelected = effectiveRole === 'student' && isMobile && location.pathname === '/'
     && new URLSearchParams(location.search).get('view') === 'juan-ai';
+  const sidebarVisible = !hideSidebar && effectiveRole !== 'library';
   const [ddOpen, setDdOpen] = useState(false);
   const ddRef = useRef<HTMLDivElement>(null);
 
@@ -53,8 +52,7 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
   const studentLinks = isMobile && effectiveRole === 'student'
     ? [...STUDENT_NAV_LINKS, { to: '/?view=juan-ai', icon: 'ti-message-chatbot', label: 'JUAN-AI' }]
     : STUDENT_NAV_LINKS;
-  const navLinks = effectiveRole === 'library' ? LIBRARY_NAV_LINKS
-    : effectiveRole === 'admin' || effectiveRole === 'superadmin' ? ADMIN_NAV_LINKS
+  const navLinks = effectiveRole === 'admin' || effectiveRole === 'superadmin' ? ADMIN_NAV_LINKS
     : effectiveRole === 'adviser' ? ADVISER_NAV_LINKS
     : studentLinks;
 
@@ -94,8 +92,8 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
   }, []);
 
   return (
-    <div className={`app${hideSidebar ? ' app-fullscreen' : ''}${assistantSelected ? ' mobile-assistant-active' : ''}`}>
-      {!hideSidebar && <aside className="sidebar">
+    <div className={`app${sidebarVisible ? '' : ' app-fullscreen'}${assistantSelected ? ' mobile-assistant-active' : ''}`}>
+      {sidebarVisible && <aside className="sidebar">
         <div className="logo">
           <div className="logo-system">STI Education System</div>
           <div className="logo-brand">JuanFinder</div>
