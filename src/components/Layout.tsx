@@ -64,7 +64,7 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
   const signOut = () => {
     const finishLogout = () => {
       logout();
-      navigate('/login');
+      navigate('/', { replace: true });
     };
     if (!user?.sessionToken) {
       finishLogout();

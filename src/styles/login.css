@@ -28,6 +28,7 @@
 .jf-login-modal .modal-header  { background:#253f66; border-bottom:none; border-radius:20px 20px 0 0; padding:22px 24px 16px; flex-direction:column; align-items:flex-start; }
 .jf-login-modal .btn-close     { position:absolute; top:14px; right:16px; filter:invert(1); }
 .lp-modal-header { background:#f5c842; }
+.jf-login-modal .lp-modal-header .lp-brand-text { color:#fff; }
 .lp-modal-body   { padding:20px 24px 24px; }
 .lp-modal-title  { font-size:22px; font-weight:800; color:#fff; margin-bottom:4px; }
 .lp-modal-sub    { font-size:13px; color:rgba(255,255,255,.45); }
