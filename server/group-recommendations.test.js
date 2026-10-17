@@ -122,6 +122,8 @@ test('HTTP route enforces bearer authentication and student role, ignoring clien
         else if (url.pathname === '/rest/v1/users') data = url.searchParams.get('select') === 'user_id,specialty,skills'
             ? [{ user_id: 20, specialty: 'Database', skills: ['SQL'] }]
             : { ...student, role, is_active: true };
+        else if (url.pathname === '/rest/v1/students') data = { user_id: student.user_id, course: student.course, skills: student.skills };
+        else if (url.pathname === '/rest/v1/advisers') data = { user_id: student.user_id, course: student.course, adviser_capacity: 2 };
         else if (url.pathname === '/rest/v1/groups') data = [group(1, adviserMatching ? { owner_id: 10, finalized_at: '2026-01-01', description: 'Build a database student portal' } : {})];
         else if (url.pathname === '/rest/v1/rpc/get_group_adviser_application') data = { application: null };
         else if (url.pathname === '/rest/v1/ai_capstone_projects') data = { selected_title: 'Student portal' };

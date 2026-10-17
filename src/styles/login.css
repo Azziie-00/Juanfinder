@@ -38,6 +38,9 @@
 .lp-role-btn:hover { filter:brightness(1.1); transform:translateY(-1px); }
 .lp-role-student { background:#fff; color:#1a2a4a; border-color:rgba(26,42,74,.2); }
 .lp-role-adviser, .lp-role-admin { background:#fff; color:#1a2a4a; border-color:rgba(26,42,74,.2); }
+.lp-role-library { background:#fff; border-color:rgba(26,42,74,.2); }
+.lp-role-library span { color:#1a2a4a; }
+.lp-role-library i { color:#1a2a4a; }
 
 @media(max-width:768px) {
   .lp-nav { padding:0 16px; }

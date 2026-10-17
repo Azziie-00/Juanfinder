@@ -103,7 +103,7 @@ const adviserCoursesMatch = (groupCourse, adviserCourse) => {
 const checkApplicationCourses = async (res, groupId, adviserId) => {
     const [group, adviser] = await Promise.all([
         supabase.from("groups").select("course").eq("group_id", groupId).maybeSingle(),
-        supabase.from("users").select("course").eq("user_id", adviserId).eq("role", "adviser").maybeSingle(),
+        supabase.from("advisers").select("course").eq("user_id", adviserId).maybeSingle(),
     ]);
     if (group.error || adviser.error) { adviserWorkflowError(res, group.error || adviser.error); return false; }
     if (!group.data || !adviser.data) { res.status(404).json({ success: false, message: "Group or adviser not found." }); return false; }
@@ -150,6 +150,18 @@ const buildGeneratedUsername = (firstName, lastName, userCode) => {
     return `${base || 'user'}${safeUserCode ? `.${safeUserCode}` : ''}`;
 };
 const normalizeNamePart = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
+const getRoleProfile = async (role, userId) => {
+    const table = role === "student" ? "students" : role === "adviser" ? "advisers" : null;
+    if (!table) return { data: null, error: null };
+    return supabase.from(table).select("*").eq("user_id", userId).maybeSingle();
+};
+const loadUserWithProfile = async (user) => {
+    if (!["student", "adviser"].includes(user.role)) return user;
+    const { data: profile, error } = await getRoleProfile(user.role, user.user_id);
+    if (error) throw error;
+    if (!profile) throw new Error(`Missing ${user.role} profile for user ${user.user_id}.`);
+    return { ...user, ...profile };
+};
 
 app.use(dbRequired);
 
@@ -171,7 +183,7 @@ const getUser = async (req, res, next) => {
         if (data.password_change_required && !["/api/password/change", "/api/logout"].includes(req.path)) {
             return res.status(403).json({ success: false, passwordChangeRequired: true, message: "Change the temporary password before accessing this feature." });
         }
-        req.user = data;
+        req.user = await loadUserWithProfile(data);
         req.sessionHash = sessionHash;
         const previewRole = req.header("x-view-role");
         req.effectiveRole = data.role === "superadmin" && process.env.NODE_ENV !== "production" && ["student", "adviser", "admin", "library"].includes(previewRole)
@@ -237,6 +249,7 @@ app.post("/api/login", async (req, res) => {
         if (!user || !(await bcrypt.compare(String(password), user.password_hash))) {
             return res.status(401).json({ success: false, message: "Invalid username, password, or role." });
         }
+        user = await loadUserWithProfile(user);
         if (user.expires_at && new Date(user.expires_at) <= new Date()) {
             await supabase.from("users").update({ is_active: false }).eq("user_id", user.user_id);
             return res.status(401).json({ success: false, message: "This account has expired. Contact an administrator." });
@@ -329,12 +342,12 @@ app.patch("/api/profile", getUser, requireStudent, async (req, res) => {
         return res.status(400).json({ success: false, message: "Enter a valid birthdate that is not in the future." });
     }
     const name = `${firstName} ${lastName}`;
-    const { data, error } = await supabase.from("users").update({
-        first_name: firstName, last_name: lastName, name, bio, gender, socials, skills, birthdate,
-    }).eq("user_id", req.user.user_id).eq("role", "student")
-        .select("user_id,first_name,last_name,name,user_code,course,year_level,specialty,skills,bio,gender,socials,birthdate").single();
+    const { error } = await supabase.rpc("update_student_profile", {
+    p_user_id: req.user.user_id, p_first_name: firstName, p_last_name: lastName, p_name: name,
+    p_bio: bio, p_gender: gender, p_socials: socials, p_birthdate: birthdate, p_skills: skills,
+    });
     if (error) return res.status(500).json({ success: false, message: "Unable to save your profile." });
-    res.json({ success: true, profile: data });
+    res.json({ success: true, profile: { ...req.user, first_name: firstName, last_name: lastName, name, bio, gender, socials, skills, birthdate } });
 });
 
 const PORTFOLIO_BUCKET = "student-portfolios";
@@ -496,41 +509,44 @@ app.get("/api/advisers", getUser, async (req, res) => {
 });
 
 app.get("/api/students", getUser, async (req, res) => {
-    let studentQuery = supabase.from("users")
-        .select("user_id,user_code,username,name,course,year_level,specialty,skills,adviser_id")
-        .eq("role", "student").eq("is_active", true).order("name");
+    let studentQuery = supabase.from("students")
+        .select("user_id,course,year_level,specialty,skills,adviser_id");
     if (req.effectiveRole === "adviser") studentQuery = studentQuery.eq("adviser_id", req.user.user_id);
     if (req.effectiveRole === "student") {
         const course = String(req.user.course ?? "").trim();
         if (!course || normalizeCourse(course) === "unspecified") return res.json([]);
         studentQuery = studentQuery.ilike("course", course);
     }
-    const [studentsResult, membershipsResult, groupsResult] = await Promise.all([
+    const [profilesResult, membershipsResult, groupsResult] = await Promise.all([
         studentQuery,
         supabase.from("group_members").select("user_id,group_id"),
         supabase.from("groups").select("group_id,group_name,status,owner_id,finalized_at"),
     ]);
-    if (studentsResult.error || membershipsResult.error || groupsResult.error) {
+    if (profilesResult.error || membershipsResult.error || groupsResult.error) {
         return res.status(500).json({ success: false, message: "Unable to load students." });
     }
+    const profileIds = profilesResult.data.map((profile) => profile.user_id);
+    if (!profileIds.length) return res.json([]);
+    const [studentsResult, ownerResult] = await Promise.all([
+        supabase.from("users").select("user_id,user_code,username,name,is_active").in("user_id", profileIds).eq("is_active", true).order("name"),
+        supabase.from("users").select("user_id,name"),
+    ]);
+    if (studentsResult.error || ownerResult.error) return res.status(500).json({ success: false, message: "Unable to load student identities." });
+    const profileById = new Map(profilesResult.data.map((profile) => [Number(profile.user_id), profile]));
     const groupById = new Map(groupsResult.data.map((group) => [Number(group.group_id), group]));
     const groupsByUser = new Map(membershipsResult.data.map((membership) => [Number(membership.user_id), groupById.get(Number(membership.group_id))]));
-    const ownerIds = [...new Set(groupsResult.data.map((group) => Number(group.owner_id)).filter(Boolean))];
-    const ownerResult = ownerIds.length
-        ? await supabase.from("users").select("user_id,name").in("user_id", ownerIds)
-        : { data: [], error: null };
-    if (ownerResult.error) return res.status(500).json({ success: false, message: "Unable to load group leaders." });
     const owners = new Map(ownerResult.data.map((owner) => [Number(owner.user_id), owner.name]));
     res.json(studentsResult.data.map((student) => {
+        const profile = profileById.get(Number(student.user_id));
         const group = groupsByUser.get(Number(student.user_id));
         return {
             id: String(student.user_id), name: student.name || student.username,
-            specialty: student.specialty || "Unspecified", group: group?.group_name || "--",
+            specialty: profile?.specialty || "Unspecified", group: group?.group_name || "--",
             groupStatus: group?.finalized_at ? "Finalized" : group?.status || null,
             groupLeader: group ? owners.get(Number(group.owner_id)) || "Unassigned" : "",
             availability: group ? "0" : "1",
-            year: student.year_level || "Unspecified", course: student.course || "Unspecified",
-            skills: student.skills || [], status: group ? "Has a group" : "Looking for group",
+            year: profile?.year_level || "Unspecified", course: profile?.course || "Unspecified",
+            skills: profile?.skills || [], status: group ? "Has a group" : "Looking for group",
             email: student.username,
         };
     }));
@@ -611,7 +627,7 @@ app.patch("/api/adviser/profile", getUser, async (req, res) => {
         return res.status(400).json({ success: false, message: "Select a valid gender option." });
     }
     const requirements = requirementRows.join("\n");
-    const { error } = await supabase.from("users").update({ bio, gender, requirements }).eq("user_id", req.user.user_id).eq("role", "adviser");
+    const { error } = await supabase.from("advisers").update({ bio, gender, requirements }).eq("user_id", req.user.user_id);
     if (error) return res.status(500).json({ success: false, message: "Unable to save adviser details." });
     res.json({ success: true });
 });
@@ -734,7 +750,7 @@ app.post("/api/groups/:id/requests/:requestId/approve", getUser, requireStudent,
     if (!groupResult.data || !requestResult.data) return res.status(404).json({ success: false, message: "Join request not found." });
     if (Number(groupResult.data.owner_id) !== Number(req.user.user_id)) return res.status(403).json({ success: false, message: "Only the group owner can approve requests." });
     if (groupResult.data.finalized_at) return res.status(409).json({ success: false, message: "This group is finalized and membership is locked." });
-    const { data: student, error: studentError } = await supabase.from("users").select("course").eq("user_id", requestResult.data.user_id).eq("role", "student").maybeSingle();
+    const { data: student, error: studentError } = await supabase.from("students").select("course").eq("user_id", requestResult.data.user_id).maybeSingle();
     if (studentError) return res.status(500).json({ success: false, message: "Unable to verify student course." });
     if (!student || normalizeCourse(student.course) !== normalizeCourse(groupResult.data.course)) {
         return res.status(409).json({ success: false, message: "Students can only join groups in their own course." });
@@ -1042,7 +1058,7 @@ app.post("/api/groups/:id/members", getUser, requireStudent, async (req, res) =>
     if (!Number.isInteger(groupId) || !Number.isInteger(memberId)) return res.status(400).json({ success: false, message: "A valid group and student are required." });
     const [groupResult, studentResult] = await Promise.all([
         supabase.from("groups").select("course,finalized_at").eq("group_id", groupId).maybeSingle(),
-        supabase.from("users").select("course").eq("user_id", memberId).eq("role", "student").maybeSingle(),
+        supabase.from("students").select("course").eq("user_id", memberId).maybeSingle(),
     ]);
     if (groupResult.error || studentResult.error) return res.status(500).json({ success: false, message: "Unable to verify group membership eligibility." });
     if (!groupResult.data || !studentResult.data) return res.status(404).json({ success: false, message: "Group or student not found." });
@@ -1079,28 +1095,31 @@ app.get("/api/admin/summary", getUser, requireAdmin, async (_req, res) => {
 });
 
 const validateAdminCourse = async (course) => {
-    const [courseRecord, assignedUsers, assignedGroups] = await Promise.all([
+    const [courseRecord, assignedStudents, assignedAdvisers, assignedGroups] = await Promise.all([
         supabase.from("courses").select("course_code").eq("course_code", course).maybeSingle(),
-        supabase.from("users").select("user_id").in("role", ["student", "adviser"]).eq("course", course).limit(1),
+        supabase.from("students").select("user_id").eq("course", course).limit(1),
+        supabase.from("advisers").select("user_id").eq("course", course).limit(1),
         supabase.from("groups").select("group_id").eq("course", course).limit(1),
     ]);
-    if (courseRecord.error || assignedUsers.error || assignedGroups.error) return { valid: false, error: true };
+    if (courseRecord.error || assignedStudents.error || assignedAdvisers.error || assignedGroups.error) return { valid: false, error: true };
     return {
-        valid: Boolean(courseRecord.data || assignedUsers.data.length || assignedGroups.data.length),
+        valid: Boolean(courseRecord.data || assignedStudents.data.length || assignedAdvisers.data.length || assignedGroups.data.length),
         error: false,
     };
 };
 
 app.get("/api/admin/courses", getUser, requireAdmin, async (_req, res) => {
-    const [catalog, assignedUsers, assignedGroups] = await Promise.all([
+    const [catalog, assignedStudents, assignedAdvisers, assignedGroups] = await Promise.all([
         supabase.from("courses").select("course_code").order("course_code"),
-        supabase.from("users").select("course").in("role", ["student", "adviser"]).not("course", "is", null).neq("course", "").neq("course", "Unspecified"),
+        supabase.from("students").select("course").neq("course", "").neq("course", "Unspecified"),
+        supabase.from("advisers").select("course").neq("course", "").neq("course", "Unspecified"),
         supabase.from("groups").select("course").not("course", "is", null).neq("course", ""),
     ]);
-    if (catalog.error || assignedUsers.error || assignedGroups.error) return res.status(500).json({ success: false, message: "Unable to load courses." });
+    if (catalog.error || assignedStudents.error || assignedAdvisers.error || assignedGroups.error) return res.status(500).json({ success: false, message: "Unable to load courses." });
     const courses = [
         ...catalog.data.map((row) => row.course_code),
-        ...assignedUsers.data.map((row) => row.course),
+        ...assignedStudents.data.map((row) => row.course),
+        ...assignedAdvisers.data.map((row) => row.course),
         ...assignedGroups.data.map((row) => row.course),
     ];
     res.json([...new Set(courses.map((course) => String(course).trim()).filter(Boolean))].sort());
@@ -1116,7 +1135,7 @@ app.get("/api/admin/users", getUser, requireAdmin, async (req, res) => {
     const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
     const pageSize = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 10, 1), 10);
     const offset = (page - 1) * pageSize;
-    const role = ["student", "adviser"].includes(req.query.role) ? req.query.role : null;
+    const role = ["student", "adviser", "library"].includes(req.query.role) ? req.query.role : null;
     const course = typeof req.query.course === "string" ? req.query.course.trim() : "";
     if (req.query.course !== undefined && !course) return res.status(400).json({ success: false, message: "Course is invalid." });
     if (course) {
@@ -1124,20 +1143,51 @@ app.get("/api/admin/users", getUser, requireAdmin, async (req, res) => {
         if (validation.error) return res.status(500).json({ success: false, message: "Unable to validate course filter." });
         if (!validation.valid) return res.status(400).json({ success: false, message: "Course is invalid." });
     }
+    let matchingProfileIds = null;
+    if (course) {
+        const profileTables = role === "student" ? ["students"] : role === "adviser" ? ["advisers"]
+            : role === "library" ? [] : ["students", "advisers"];
+        const profileResults = await Promise.all(profileTables.map((table) =>
+            supabase.from(table).select("user_id").eq("course", course)
+        ));
+        if (profileResults.some((result) => result.error)) return res.status(500).json({ success: false, message: "Unable to filter users by course." });
+        matchingProfileIds = profileResults.flatMap((result) => result.data.map((profile) => profile.user_id));
+        if (!matchingProfileIds.length) return res.json({ items: [], total: 0, page, pageSize, totalPages: 0 });
+    }
     let query = supabase.from("users").select("*", { count: "exact" }).order("created_at", { ascending: false }).order("user_id", { ascending: false });
     if (role) query = query.eq("role", role);
-    if (course) query = query.eq("course", course);
+    if (matchingProfileIds) query = query.in("user_id", matchingProfileIds);
     const { data, count, error } = await query.range(offset, offset + pageSize - 1);
     if (error) return res.status(500).json({ success: false, message: "Unable to load users." });
     const total = count || 0;
+    const studentIds = data.filter((record) => record.role === "student").map((record) => record.user_id);
+    const adviserIds = data.filter((record) => record.role === "adviser").map((record) => record.user_id);
+    const [studentProfiles, adviserProfiles] = await Promise.all([
+        studentIds.length ? supabase.from("students").select("*").in("user_id", studentIds) : Promise.resolve({ data: [], error: null }),
+        adviserIds.length ? supabase.from("advisers").select("*").in("user_id", adviserIds) : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (studentProfiles.error || adviserProfiles.error) return res.status(500).json({ success: false, message: "Unable to load user profiles." });
+    const profileById = new Map([
+        ...studentProfiles.data.map((profile) => [Number(profile.user_id), profile]),
+        ...adviserProfiles.data.map((profile) => [Number(profile.user_id), profile]),
+    ]);
     const adviserCounts = new Map();
     if (role === "adviser" && data.length) {
-        const adviserIds = data.map((adviser) => adviser.user_id);
-        const advisees = await supabase.from("users").select("adviser_id").eq("role", "student").eq("is_active", true).in("adviser_id", adviserIds);
+        const advisees = await supabase.from("students").select("user_id,adviser_id").in("adviser_id", adviserIds);
         if (advisees.error) return res.status(500).json({ success: false, message: "Unable to load adviser advisees." });
-        for (const advisee of advisees.data) adviserCounts.set(Number(advisee.adviser_id), (adviserCounts.get(Number(advisee.adviser_id)) || 0) + 1);
+        const activeStudents = advisees.data.length
+            ? await supabase.from("users").select("user_id").eq("is_active", true).in("user_id", advisees.data.map((row) => row.user_id))
+            : { data: [], error: null };
+        if (activeStudents.error) return res.status(500).json({ success: false, message: "Unable to verify active adviser advisees." });
+        const activeIds = new Set(activeStudents.data.map((row) => Number(row.user_id)));
+        for (const advisee of advisees.data) {
+            if (activeIds.has(Number(advisee.user_id))) adviserCounts.set(Number(advisee.adviser_id), (adviserCounts.get(Number(advisee.adviser_id)) || 0) + 1);
+        }
     }
-    res.json({ items: data.map((record) => userDto({ ...record, advisee_count: adviserCounts.get(Number(record.user_id)) || 0 })), total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+    res.json({ items: data.map((record) => userDto({
+        ...record, ...profileById.get(Number(record.user_id)),
+        advisee_count: adviserCounts.get(Number(record.user_id)) || 0,
+    })), total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
 });
 
 app.post("/api/admin/users/:id/temporary-access", getUser, requireAdmin, async (req, res) => {
@@ -1214,15 +1264,55 @@ app.post("/api/admin/users", getUser, requireAdmin, async (req, res) => {
         first_name: normalizedFirstName, last_name: normalizedLastName,
         name: `${normalizedFirstName} ${normalizedLastName}`.trim(), role: normalizedRole,
         expires_at: normalizedExpiresAt?.toISOString() || null,
-        ...(["student", "adviser"].includes(normalizedRole) ? { course: accountCourse || "Unspecified" } : {}),
-        ...(normalizedRole === "student" ? {
+    }).select("*").single();
+    if (error) return res.status(error.code === "23505" ? 409 : 500).json({ success: false, message: error.code === "23505" ? "Username or ID already exists." : "Unable to add user." });
+    if (["student", "adviser"].includes(normalizedRole)) {
+        const profile = normalizedRole === "student" ? {
+            course: accountCourse || "Unspecified",
             year_level: String(yearLevel || "").trim(),
             specialty: String(specialty || "").trim(),
             skills: Array.isArray(skills) ? skills.map(String) : [],
             adviser_id: adviserId ? Number(adviserId) : null,
-        } : {}),
+        } : { course: accountCourse || "Unspecified" };
+        const { data: savedProfile, error: profileError } = await supabase.from(normalizedRole === "student" ? "students" : "advisers")
+            .update(profile).eq("user_id", data.user_id).select("*").single();
+        if (profileError) {
+            const { error: cleanupError } = await supabase.from("users").delete().eq("user_id", data.user_id);
+            if (cleanupError) console.error("Account cleanup failed after profile creation error:", cleanupError);
+            console.error("Role profile creation failed:", profileError);
+            return res.status(500).json({ success: false, message: "Unable to add user profile." });
+        }
+        return res.status(201).json({ success: true, user: userDto({ ...data, ...savedProfile }) });
+    }
+    res.status(201).json({ success: true, user: userDto(data) });
+});
+
+app.post("/api/admin/library-users", getUser, requireAdmin, async (req, res) => {
+    const username = String(req.body.username ?? "").trim().toLowerCase();
+    const password = String(req.body.password ?? "");
+    if (!/^[a-z0-9][a-z0-9._@+-]{2,119}$/.test(username)) {
+        return res.status(400).json({ success: false, message: "Enter a username with 3 to 120 letters, numbers, or . _ @ + - characters." });
+    }
+    const passwordError = validatePassword(password);
+    if (passwordError) return res.status(400).json({ success: false, message: passwordError });
+    if (password.length < 8 || password.length > 128) {
+        return res.status(400).json({ success: false, message: "Password must be between 8 and 128 characters." });
+    }
+    const passwordHash = await bcrypt.hash(password, 12);
+    const { data, error } = await supabase.from("users").insert({
+        username,
+        user_code: `LIB-${crypto.randomUUID()}`,
+        password_hash: passwordHash,
+        name: username,
+        first_name: "",
+        last_name: "",
+        role: "library",
     }).select("*").single();
-    if (error) return res.status(error.code === "23505" ? 409 : 500).json({ success: false, message: error.code === "23505" ? "Username or ID already exists." : "Unable to add user." });
+    if (error) {
+        if (error.code === "23505") return res.status(409).json({ success: false, message: "This username is already in use." });
+        console.error("Library account creation failed:", error);
+        return res.status(500).json({ success: false, message: "Unable to add the library account." });
+    }
     res.status(201).json({ success: true, user: userDto(data) });
 });
 
@@ -1258,11 +1348,12 @@ app.patch("/api/admin/users/:id", getUser, requireAdmin, async (req, res) => {
         first_name: normalizedFirstName, last_name: normalizedLastName,
         name: `${normalizedFirstName || finalUsername} ${normalizedLastName}`.trim() || finalUsername,
     };
+    const profileUpdates = {};
     if (["student", "adviser"].includes(normalizedRole) && Object.prototype.hasOwnProperty.call(req.body, "course")) {
         const result = await resolveAccountCourse(req.body.course);
         if (result.error) return res.status(500).json({ success: false, message: "Unable to validate the account course." });
         if (!result.course) return res.status(400).json({ success: false, message: "Select a configured course for this account." });
-        updates.course = result.course;
+        profileUpdates.course = result.course;
     }
     if (normalizedRole === "adviser" && Object.prototype.hasOwnProperty.call(req.body, "adviserCapacity")) {
         const capacityText = String(adviserCapacity);
@@ -1270,7 +1361,7 @@ app.patch("/api/admin/users/:id", getUser, requireAdmin, async (req, res) => {
         if (!/^\d+$/.test(capacityText) || !Number.isSafeInteger(capacity) || capacity < 0 || capacity > 2147483647) {
             return res.status(400).json({ success: false, message: "Adviser slot capacity must be a non-negative whole number." });
         }
-        updates.adviser_capacity = capacity;
+        profileUpdates.adviser_capacity = capacity;
     }
     if (Object.prototype.hasOwnProperty.call(req.body, "expiresAt")) {
         const parsedExpiration = expiresAt ? new Date(expiresAt) : null;
@@ -1283,6 +1374,16 @@ app.patch("/api/admin/users/:id", getUser, requireAdmin, async (req, res) => {
     const { data, error } = await supabase.from("users").update(updates).eq("user_id", Number(req.params.id)).neq("role", "superadmin").select("user_id");
     if (error) return res.status(error.code === "23505" ? 409 : 500).json({ success: false, message: error.code === "23505" ? "Username or ID already exists." : "Unable to edit user." });
     if (!data.length) return res.status(403).json({ success: false, message: "This account cannot be edited." });
+    if (Object.keys(profileUpdates).length) {
+        const table = normalizedRole === "student" ? "students" : normalizedRole === "adviser" ? "advisers" : null;
+        if (table) {
+            const { error: profileError } = await supabase.from(table).update(profileUpdates).eq("user_id", Number(req.params.id));
+            if (profileError) {
+                console.error("Role profile update failed:", profileError);
+                return res.status(500).json({ success: false, message: "Account saved, but its role profile could not be updated." });
+            }
+        }
+    }
     res.json({ success: true });
 });
 
@@ -1336,15 +1437,21 @@ app.get("/api/admin/groups/:id/members", getUser, requireAdmin, async (req, res)
     if (!group) return res.status(404).json({ success: false, message: "Group not found." });
     const [memberResult, studentResult, auditResult, adminResult] = await Promise.all([
         supabase.from("group_members").select("user_id").eq("group_id", groupId),
-        supabase.from("users").select("user_id,user_code,first_name,last_name,name,course").eq("role", "student").eq("is_active", true).order("name"),
+        supabase.from("students").select("user_id,course"),
         supabase.from("group_membership_audit").select("user_id,admin_id,action,changed_at").eq("group_id", groupId).order("changed_at", { ascending: false }).limit(50),
         supabase.from("users").select("user_id,name,first_name,last_name").in("role", ["admin", "superadmin"]),
     ]);
     if (memberResult.error || studentResult.error || auditResult.error || adminResult.error) {
         return res.status(500).json({ success: false, message: "Unable to load group membership data." });
     }
+    const studentIds = studentResult.data.map((row) => row.user_id);
+    const activeStudentResult = studentIds.length
+        ? await supabase.from("users").select("user_id,user_code,first_name,last_name,name").eq("is_active", true).in("user_id", studentIds).order("name")
+        : { data: [], error: null };
+    if (activeStudentResult.error) return res.status(500).json({ success: false, message: "Unable to load student accounts." });
+    const profileById = new Map(studentResult.data.map((row) => [Number(row.user_id), row]));
     const memberIds = new Set(memberResult.data.map((row) => Number(row.user_id)));
-    const usersById = new Map(studentResult.data.map((row) => [Number(row.user_id), row]));
+    const usersById = new Map(activeStudentResult.data.map((row) => [Number(row.user_id), row]));
     const adminsById = new Map(adminResult.data.map((row) => [Number(row.user_id), row]));
     const toStudentDto = (record) => ({
         UserID: Number(record.user_id), UserCode: record.user_code,
@@ -1352,8 +1459,8 @@ app.get("/api/admin/groups/:id/members", getUser, requireAdmin, async (req, res)
     });
     res.json({
         group: { GroupID: Number(group.group_id), GroupName: group.group_name, Finalized: Boolean(group.finalized_at), MaxMembers: group.max_members, OwnerID: Number(group.owner_id) },
-        members: studentResult.data.filter((row) => memberIds.has(Number(row.user_id))).map(toStudentDto),
-        availableStudents: studentResult.data.filter((row) => !memberIds.has(Number(row.user_id)) && normalizeCourse(row.course) === normalizeCourse(group.course)).map(toStudentDto),
+        members: activeStudentResult.data.filter((row) => memberIds.has(Number(row.user_id))).map(toStudentDto),
+        availableStudents: activeStudentResult.data.filter((row) => !memberIds.has(Number(row.user_id)) && normalizeCourse(profileById.get(Number(row.user_id))?.course) === normalizeCourse(group.course)).map(toStudentDto),
         audit: auditResult.data.map((row) => ({
             Student: usersById.get(Number(row.user_id))?.name || `User ${row.user_id}`,
             Admin: adminsById.get(Number(row.admin_id))?.name || `Admin ${row.admin_id}`,
@@ -1372,7 +1479,7 @@ app.post("/api/admin/groups/:id/members", getUser, requireAdmin, async (req, res
     if (action === "add") {
         const [groupResult, studentResult] = await Promise.all([
             supabase.from("groups").select("course").eq("group_id", groupId).maybeSingle(),
-            supabase.from("users").select("course").eq("user_id", studentId).eq("role", "student").maybeSingle(),
+            supabase.from("students").select("course").eq("user_id", studentId).maybeSingle(),
         ]);
         if (groupResult.error || studentResult.error) return res.status(500).json({ success: false, message: "Unable to verify group course eligibility." });
         if (!groupResult.data || !studentResult.data) return res.status(404).json({ success: false, message: "Group or student not found." });
