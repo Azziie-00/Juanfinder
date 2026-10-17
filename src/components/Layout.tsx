@@ -12,12 +12,14 @@ const STUDENT_NAV_LINKS = [
   { to:'/adviser', icon:'ti-user-circle',      label:'Adviser'   },
   { to:'/mygroup', icon:'ti-users-group',      label:'My Group'  },
   { to:'/library', icon:'ti-books',            label:'Library'   },
+  { to:'/settings', icon:'ti-settings', label:'Settings' },
 ];
 
 const ADVISER_NAV_LINKS = [
   { to:'/',         icon:'ti-home',        label:'Dashboard'    },
   { to:'/group',    icon:'ti-settings',    label:'Group'        },
   { to:'/students', icon:'ti-list-details',label:'Student Members' },
+  { to:'/settings', icon:'ti-settings', label:'Settings' },
 ];
 
 const ADMIN_NAV_LINKS = [
@@ -139,7 +141,7 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
                 <div className="user-name-text">{user?.name || 'Student'}</div>
                 <div className="user-role-text">{roleLabel}</div>
               </div>
-              <i className={`ti ti-chevron-down user-chevron${ddOpen ? ' open' : ''}`} onClick={() => setDdOpen(o => !o)}></i>
+              <button type="button" className="user-menu-toggle" aria-label="Account menu" aria-expanded={ddOpen} onClick={() => setDdOpen(o => !o)}><i className={`ti ti-chevron-down user-chevron${ddOpen ? ' open' : ''}`}></i></button>
 
               {ddOpen && (
                 <div className="user-dd">
@@ -151,8 +153,8 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
                     </div>
                   </div>
                   <div className="user-dd-divider"></div>
-                  <div className="user-dd-item" onClick={() => { setDdOpen(false); navigate('/profile'); }}><i className="ti ti-user"></i> My Profile</div>
-                  <div className="user-dd-item"><i className="ti ti-settings"></i> Settings</div>
+                  <NavLink className="user-dd-item" to="/profile" onClick={() => setDdOpen(false)}><i className="ti ti-user"></i> My Profile</NavLink>
+                  {['student', 'adviser'].includes(effectiveRole || '') && <NavLink className="user-dd-item" to="/settings" onClick={() => setDdOpen(false)}><i className="ti ti-settings"></i> Settings</NavLink>}
                   <div className="user-dd-divider"></div>
                   <div className="user-dd-item logout" onClick={signOut}>
                     <i className="ti ti-logout"></i> Log Out

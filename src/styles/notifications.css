@@ -54,3 +54,4 @@
 .notification-application-details .modal-body, .application-file-details .modal-body { background: #fff; color: #001f3f; }
 .application-file-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0; overflow-wrap: anywhere; }
 @media (max-width: 576px) { .notification-application { padding-left: 16px; } .application-file-summary { align-items: flex-start; flex-direction: column; } }
+.notification-actions .notification-action { text-transform: uppercase; }

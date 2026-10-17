@@ -42,8 +42,11 @@ export default function NotificationBell() {
 
   const load = useCallback(async (before?: number) => {
     if (!user || actionInFlight.current) return;
-    controller.current?.abort();
+    // Polling/focus must not cancel a slow request before it can return.
+    if (controller.current && !controller.current.signal.aborted) return;
     const request = new AbortController(); controller.current = request;
+    let timedOut = false;
+    const timeout = window.setTimeout(() => { timedOut = true; request.abort(); }, 20000);
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/notifications${before ? `?before=${before}` : ''}`, { headers: authHeaders(user, viewRole), signal: request.signal });
@@ -55,17 +58,23 @@ export default function NotificationBell() {
       setInbox(current => before && current ? { ...next, items: [...new Map([...current.items, ...next.items].map(item => [item.notification_id, item])).values()] } : next);
       setLoadFailed(false);
     } catch (requestError) {
-      if (!request.signal.aborted) { setLoadFailed(true); diagnostics('load', requestError); }
-    } finally { if (!request.signal.aborted) setLoading(false); }
+      if (!request.signal.aborted || timedOut) { setLoadFailed(true); diagnostics(timedOut ? 'load-timeout' : 'load', requestError); }
+    } finally {
+      window.clearTimeout(timeout);
+      if (controller.current === request) { controller.current = null; setLoading(false); }
+    }
   }, [user, viewRole]);
 
   useEffect(() => {
     const initial = window.setTimeout(() => void load(), 0);
     const refresh = () => { void load(); };
-    const interval = window.setInterval(refresh, open ? 5000 : 30000);
     window.addEventListener('focus', refresh);
     window.addEventListener('juan-finder:notifications-changed', refresh);
-    return () => { window.clearTimeout(initial); window.clearInterval(interval); window.removeEventListener('focus', refresh); window.removeEventListener('juan-finder:notifications-changed', refresh); controller.current?.abort(); };
+    return () => { window.clearTimeout(initial); window.removeEventListener('focus', refresh); window.removeEventListener('juan-finder:notifications-changed', refresh); controller.current?.abort(); };
+  }, [load]);
+  useEffect(() => {
+    const interval = window.setInterval(() => void load(), open ? 5000 : 30000);
+    return () => window.clearInterval(interval);
   }, [load, open]);
   useEffect(() => {
     const outside = (event: PointerEvent) => { if (!container.current?.contains(event.target as Node)) setOpen(false); };
@@ -88,16 +97,17 @@ export default function NotificationBell() {
     setLoading(false);
     setBusy(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/notifications/${notification ? `${notification.notification_id}/read` : 'read-all'}`, { method: 'PATCH', headers: authHeaders(user, viewRole) });
+      const response = await fetch(`${API_BASE_URL}/notifications/${notification ? `${notification.notification_id}/read` : 'read-all'}`, { method: 'PATCH', headers: authHeaders(user, viewRole), signal: AbortSignal.timeout(20000) });
       const result = await readApiResponse<{ readAt: string; unreadCount: number }>(response, 'Unable to mark notifications as read.');
       setInbox(current => current && { ...current, unreadCount: result.unreadCount, items: current.items.map(item => !notification || item.notification_id === notification.notification_id ? { ...item, read_at: item.read_at || result.readAt } : item) });
       return true;
     } catch (requestError) { diagnostics('mark-read', requestError); return false; }
     finally { actionInFlight.current = false; setBusy(false); }
   };
-  const openNotification = async (notification: Notification) => {
+  const openNotification = (notification: Notification) => {
     if (actionInFlight.current) return;
-    if (!notification.read_at) await markRead(notification);
+    // Viewing the application must not wait for a slow read-receipt write.
+    if (!notification.read_at) void markRead(notification);
     setOpen(false);
     if (notification.notification_type === 'adviser_application_submitted' && notification.application_id && effectiveRole === 'adviser') {
       setSelectedApplication(notification.application_id); return;
@@ -117,7 +127,12 @@ export default function NotificationBell() {
       const response = await fetch(`${API_BASE_URL}/adviser/applications/${application.ApplicationID}/respond`, {
         method: 'POST', headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }), body: JSON.stringify({ action }),
       });
-      await readApiResponse(response, 'Unable to process this application.');
+      const result = await readApiResponse<{ status: ApplicationReview['Status'] }>(response, 'Unable to process this application.');
+      if (result.status !== 'Accepted' && result.status !== 'Rejected' && result.status !== 'Expired') throw new Error('Invalid application response');
+      // Keep the confirmed decision even if the subsequent inbox refresh fails.
+      setInbox(current => current && { ...current, items: current.items.map(item =>
+        item.application?.ApplicationID === application.ApplicationID
+          ? { ...item, application: { ...item.application, Status: result.status, CanAccept: false } } : item) });
     } catch (error) {
       diagnostics(action, error);
       setActionError(error instanceof ApiResponseError ? error.message : 'Application could not be processed. Open its details to check the current status.');

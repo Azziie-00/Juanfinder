@@ -14,6 +14,60 @@ const submit = (group = 1, leader = 1, adviser = 10) => scalar('select public.su
 const respond = (id, adviser = 10, accept = true) => scalar('select public.respond_to_group_adviser_application($1,$2,$3)', [id, adviser, accept]);
 const slots = () => db.query('select assigned_groups, remaining_slots from adviser_slot_availability where user_id=10').then(r => r.rows[0]);
 
+test('dashboard counts assigned groups and unique members, includes legacy owners and scopes student search', () => fixture(async () => {
+    await respond(await submit());
+    await db.exec('delete from group_members where user_id=1; update users set adviser_capacity=3 where user_id=10');
+    const report = await request('/adviser/dashboard?adviserId=11', 10);
+    assert.equal(report.status, 200);
+    assert.equal(report.body.AdviserName, 'User 10');
+    assert.deepEqual(report.body.Summary, { Groups: 1, StudentMembers: 2, Capacity: 3, AvailableSlots: 2 });
+    assert.equal(report.body.Groups[0].MemberCount, 2);
+    assert.deepEqual(report.body.Groups[0].Members.map(s => s.UserCode), ['code1', 'code2']);
+    for (const term of ['USER 2', 'CODE2']) {
+        const result = await request('/adviser/dashboard?search=' + encodeURIComponent(term), 10);
+        assert.deepEqual(result.body.Groups.map(g => g.GroupID), [1]);
+        assert.equal(result.body.Summary.StudentMembers, 2);
+    }
+    assert.deepEqual((await request('/adviser/dashboard?search=code3', 10)).body.Groups, []);
+    assert.deepEqual((await request('/adviser/dashboard?search=%25', 10)).body.Groups, []);
+    assert.deepEqual((await request('/adviser/dashboard?search=code1&adviserId=10', 11)).body.Groups, []);
+    assert.equal((await request('/adviser/dashboard', 1)).status, 403);
+    assert.equal((await request('/adviser/dashboard', 99)).status, 401);
+    assert.equal((await request('/adviser/dashboard?search=' + 'a'.repeat(201), 10)).status, 400);
+    await db.exec('update users set adviser_capacity=0 where user_id=10');
+    assert.equal((await request('/adviser/dashboard', 10)).body.Summary.AvailableSlots, 0);
+    await fails(() => db.exec('SET LOCAL ROLE authenticated; SELECT get_adviser_dashboard_report(10,\'\')'), /permission denied/);
+}));
+
+test('dashboard report has no API page limit and migration reruns preserve assignments', () => fixture(async () => {
+    await db.exec(`update users set adviser_capacity=1200 where user_id=10;
+        insert into groups(group_id,group_name,course,adviser_id) select n, 'Report '||n, 'BSIT', 10 from generate_series(100,1200) n`);
+    const result = await request('/adviser/dashboard', 10);
+    assert.equal(result.body.Groups.length, 1101);
+    assert.equal(result.body.Summary.Groups, 1101);
+    assert.equal(result.body.Summary.AvailableSlots, 99);
+    await db.exec(migration('014_adviser_dashboard_report.sql'));
+    assert.equal((await request('/adviser/dashboard', 10)).body.Groups.length, 1101);
+}));
+
+test('Settings profile APIs persist only permitted fields on the signed-in account', () => fixture(async () => {
+    const student = { firstName: '  Juan ', lastName: ' Santos ', bio: ' Updated bio ', gender: 'Male', socials: 'example', skills: ['Coding'], birthdate: '2001-01-01', userId: 2, role: 'admin', course: 'BSCS' };
+    assert.equal((await request('/profile', 1, student, 'PATCH')).status, 200);
+    const profile = (await request('/profile', 1)).body;
+    assert.equal(profile.Name, 'Juan Santos'); assert.equal(profile.Bio, 'Updated bio');
+    assert.equal(profile.Course, 'BSIT'); assert.deepEqual(profile.Skills, ['Coding']);
+    assert.equal((await request('/profile', 2)).body.Name, 'User 2');
+    assert.equal((await request('/profile', 1, { ...student, firstName: '' }, 'PATCH')).status, 400);
+    assert.equal((await request('/profile', 10, student, 'PATCH')).status, 403);
+    const adviser = { bio: ' Adviser bio ', gender: 'Female', requirements: [' Research proposal ', 'Schedule'], userId: 11, adviserCapacity: 99 };
+    assert.equal((await request('/adviser/profile', 10, adviser, 'PATCH')).status, 200);
+    assert.equal((await request('/profile', 10)).body.Requirements, 'Research proposal\nSchedule');
+    assert.equal((await request('/profile', 11)).body.Bio, '');
+    assert.equal(await scalar('select adviser_capacity from users where user_id=10'), 1);
+    assert.equal((await request('/adviser/profile', 1, adviser, 'PATCH')).status, 403);
+    assert.equal((await request('/adviser/profile', 10, { ...adviser, requirements: ['x'.repeat(251)] }, 'PATCH')).status, 400);
+}));
+
 before(async () => {
     db = new PGlite();
     await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
@@ -896,7 +950,7 @@ test('two browser accounts complete submission, bell VIEW, acceptance, polling a
         await details.getByRole('button', { name: 'Close', exact: true }).last().click();
         await expect(adviser.locator('.adviser-group-summary tbody')).toContainText('First');
         await adviser.goto(base + '/');
-        await expect(adviser.getByText('0 slots remaining', { exact: true })).toBeVisible();
+        await expect(adviser.locator('.admin-stat').filter({ hasText: 'Available Slots' }).locator('span')).toHaveText('0');
         assert.deepEqual(await slots(), { assigned_groups: 1, remaining_slots: 0 });
         assert.equal(storage.files.size, 3);
         assert.equal(await scalar("select count(*)::int from notifications where notification_type='adviser_application_accepted'"), 1);

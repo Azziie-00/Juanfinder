@@ -16,6 +16,7 @@ export default function ApplicationFiles({ applicationId, documents, legacyDocum
   const { user, viewRole } = useAuth();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [listOpen, setListOpen] = useState(false);
+  const [download, setDownload] = useState<{ id: number; busy: boolean; error?: string } | null>(null);
   const requestId = useRef(0);
   const files = documents ?? (legacyDocument ? [legacyDocument] : []);
   const confirmed = Array.isArray(documents) || legacyDocument !== undefined;
@@ -32,13 +33,30 @@ export default function ApplicationFiles({ applicationId, documents, legacyDocum
     }
   };
   const close = () => { requestId.current++; setPreview(null); };
+  const downloadFile = async (file: ApplicationDocument) => {
+    setDownload({ id: file.DocumentID, busy: true });
+    try {
+      // Download does not need Word extraction or a successful PDF preview.
+      const response = await fetch(`${API_BASE_URL}/adviser/applications/${applicationId}/requirements/${file.DocumentID}`, { headers: authHeaders(user, viewRole) });
+      const data = await readApiResponse<{ downloadUrl: string }>(response, 'Unable to download this application file.');
+      if (!data.downloadUrl) throw new Error('Unable to download this application file.');
+      const link = window.document.createElement('a');
+      link.href = data.downloadUrl; link.download = file.FileName;
+      window.document.body.append(link); link.click(); link.remove();
+      setDownload({ id: file.DocumentID, busy: false });
+    } catch {
+      setDownload({ id: file.DocumentID, busy: false, error: 'Unable to download this application file.' });
+    }
+  };
   const isPdf = preview?.document.FileType === 'application/pdf' || preview?.document.FileName.toLowerCase().endsWith('.pdf');
 
   const fileList = <div className="application-file-list">
     {!confirmed ? <span>Application file information is unavailable.</span> : !files.length ? <span>No files were uploaded with this application.</span> : files.map(document => <div className="application-file-row" key={document.DocumentID}>
       <span>{document.FileName}</span>
       <Button size="sm" variant="outline-primary" onClick={() => void open(document)} aria-label={`View ${document.FileName}`}>View</Button>
+      <Button size="sm" variant="outline-primary" disabled={download?.busy} onClick={() => void downloadFile(document)} aria-label={`Download ${document.FileName}`}>{download?.busy && download.id === document.DocumentID ? 'Preparing...' : 'Download'}</Button>
     </div>)}
+    {download?.error && <p role="alert">{download.error}</p>}
   </div>;
   return <>
     {detailed ? fileList : <div className="application-file-summary">

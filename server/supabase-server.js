@@ -536,6 +536,23 @@ app.get("/api/students", getUser, async (req, res) => {
     }));
 });
 
+app.get("/api/adviser/dashboard", getUser, async (req, res) => {
+    if (req.effectiveRole !== "adviser" || req.user.role !== "adviser") {
+        return res.status(403).json({ success: false, message: "Only advisers can view this dashboard." });
+    }
+    const search = String(req.query.search ?? "").trim();
+    if (search.length > 200) return res.status(400).json({ message: "Search must not exceed 200 characters." });
+    const { data, error } = await supabase.rpc("get_adviser_dashboard_report", {
+        p_adviser_id: req.user.user_id, p_search: search,
+    });
+    if (error) {
+        console.warn("Adviser dashboard report failed.", { code: error.code || "unknown" });
+        return res.status(503).json({ message: "Your adviser dashboard is temporarily unavailable. Please try again or contact an administrator.", repair: "Apply migrations through 014; see server/ADVISER_WORKFLOW.md." });
+    }
+    if (!data) return res.status(403).json({ message: "An adviser account is required." });
+    res.set("Cache-Control", "no-store").json(data);
+});
+
 app.get("/api/adviser/groups", getUser, async (req, res) => {
     if (req.effectiveRole !== "adviser") {
         return res.status(403).json({ success: false, message: "Only advisers can view assigned student groups." });

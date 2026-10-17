@@ -102,7 +102,7 @@ export default function RecommendedGroups({ unavailable, onMatchesChange, onJoin
       {error ? <p className="recommended-groups-error" role="alert">{error}</p> : (
         <p role="status">{loading ? 'Comparing your saved skills with open groups. This may take a minute.' : message}</p>
       )}
-      {needsSkills && <Link to="/profile">Add skills to my profile →</Link>}
+      {needsSkills && <Link to="/settings">Add skills to my profile →</Link>}
       {joinError && <p className="recommended-groups-error" role="alert">{joinError}</p>}
       <div className="recommended-groups-grid">
         {recommendations.slice(page, page + 1).map(({ group, reason, matchedSkills }) => (

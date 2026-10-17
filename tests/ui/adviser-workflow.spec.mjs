@@ -19,6 +19,7 @@ async function setup(page, role = 'adviser', adviserCourse = ' \tbsit ', groupCo
     let data;
     if (path === '/notifications') data = { items: [], unreadCount: 0, hasMore: false, nextCursor: null };
     else if (path === '/adviser/groups') data = [group];
+    else if (path === '/adviser/dashboard') data = { AdviserName: 'Test User', Summary: { Groups: 1, StudentMembers: 3, Capacity: 10, AvailableSlots: 9 }, Groups: [{ ...group, Members: group.Members.map(m => ({ ...m, UserCode: String(m.UserID), Course: 'BSIT' })) }] };
     else if (path === '/adviser/applications') data = pending;
     else if (path.endsWith('/respond')) {
       actions.push(route.request().postDataJSON()); pending = []; data = { success: true, status: 'Rejected' };
@@ -258,7 +259,7 @@ test('adviser notifications show upload summaries, navy text and secure View/Acc
   });
   await page.route('**/api/adviser/applications/20', route => route.fulfill({ json: { application } }));
   await page.route('**/api/adviser/groups', route => { groupRefreshes++; return route.fulfill({ json: accepts ? [group] : [] }); });
-  await page.route('**/api/advisers', route => { slotRefreshes++; return route.fulfill({ json: [{ UserID: 10, Name: 'Adviser', Course: 'BSIT', AssignedGroups: accepts, RemainingSlots: 1 - accepts }] }); });
+  await page.route('**/api/adviser/dashboard**', route => { slotRefreshes++; return route.fulfill({ json: { AdviserName: 'Adviser', Summary: { Groups: accepts, StudentMembers: accepts * 3, Capacity: 1, AvailableSlots: 1 - accepts }, Groups: accepts ? [{ ...group, Members: group.Members.map(m => ({ ...m, UserCode: String(m.UserID), Course: 'BSIT' })) }] : [] } }); });
   await page.route('**/api/adviser/applications/20/respond', async route => {
     accepts++;
     expect(route.request().postDataJSON()).toEqual({ action: 'accept' });
@@ -299,7 +300,7 @@ test('adviser notifications show upload summaries, navy text and secure View/Acc
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.route('**/api/students', route => route.fulfill({ json: [] }));
   await page.goto('/');
-  await expect(page.getByText('0 slots remaining', { exact: true })).toBeVisible();
+  await expect(page.locator('.admin-stat').filter({ hasText: 'Available Slots' }).locator('span')).toHaveText('0');
   expect(slotRefreshes).toBeGreaterThan(0);
   await expect(page.getByRole('region', { name: 'Pending adviser applications' })).toHaveCount(0);
 });
@@ -447,4 +448,79 @@ test('student bell polls acceptance outcomes without logging out and persists re
   await page.getByRole('button', { name: 'Notifications', exact: true }).click();
   await expect(panel.getByRole('img', { name: 'Read notification', exact: true })).toBeVisible();
   await expect(panel.getByText('Status: Accepted', { exact: true })).toBeVisible();
+});
+
+for (const role of ['student', 'adviser']) {
+  test(`${role} inbox completes slow requests instead of cancelling them on every poll`, async ({ page }) => {
+    await setup(page, role);
+    let slow = false, slowRequests = 0;
+    await page.route('**/api/notifications', async route => {
+      if (slow) { slowRequests++; await new Promise(resolve => setTimeout(resolve, 6500)); }
+      await route.fulfill({ json: { items: slow ? [{ notification_id: 70, title: 'Persisted slow event', message: 'Stored event', created_at: '2026-10-16T10:00:00Z', read_at: null, application_id: null, group_id: null }] : [], unreadCount: slow ? 1 : 0, hasMore: false, nextCursor: null } });
+    });
+    await page.goto(role === 'adviser' ? '/group' : '/adviser');
+    await page.getByRole('button', { name: 'Notifications', exact: true }).click();
+    const panel = page.getByRole('dialog', { name: 'Notifications', exact: true });
+    await expect(panel.getByText('You have no notifications yet.')).toBeVisible();
+    slow = true;
+    await page.evaluate(() => window.dispatchEvent(new Event('juan-finder:notifications-changed')));
+    await expect(panel.getByText('Persisted slow event', { exact: true })).toBeVisible({ timeout: 10000 });
+    expect(slowRequests).toBe(1);
+    await expect(page.getByRole('button', { name: 'Notifications, 1 unread', exact: true })).toBeVisible();
+  });
+}
+
+test('confirmed acceptance stays disabled when the follow-up inbox refresh fails', async ({ page }) => {
+  await setup(page);
+  await mockApplicationBell(page, review());
+  let failedRefresh = false, decisions = 0;
+  await page.route('**/api/notifications', route => failedRefresh
+    ? route.fulfill({ status: 503, json: { message: 'Temporary failure' } }) : route.fallback());
+  await page.route('**/api/adviser/applications/20/respond', route => {
+    decisions++; failedRefresh = true;
+    return route.fulfill({ json: { success: true, status: 'Accepted' } });
+  });
+  await page.goto('/group');
+  await page.getByRole('button', { name: 'Notifications, 1 unread', exact: true }).click();
+  const panel = page.getByRole('dialog', { name: 'Notifications', exact: true });
+  await panel.getByRole('button', { name: 'Accept', exact: true }).click();
+  await expect(panel.getByText('Status: Accepted', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Accept', exact: true })).toBeDisabled();
+  await expect(panel.getByRole('button', { name: 'View', exact: true })).toBeEnabled();
+  expect(decisions).toBe(1);
+});
+
+test('file-list download works directly without opening a preview', async ({ page }) => {
+  await setup(page);
+  await mockApplicationBell(page, review({ FileCount: 1, FirstFileName: 'research.docx', Requirements: [{ DocumentID: 1, FileName: 'research.docx' }] }));
+  let requestedPreview = false;
+  await page.route('**/api/adviser/applications/20/requirements/1*', route => {
+    requestedPreview = new URL(route.request().url()).searchParams.has('preview');
+    return route.fulfill({ json: { downloadUrl: 'http://127.0.0.1:5178/original.docx' } });
+  });
+  await page.route('**/original.docx', route => route.fulfill({ body: 'local original document fixture', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', headers: { 'Content-Disposition': 'attachment; filename="research.docx"' } }));
+  await page.goto('/group');
+  await viewBellApplication(page);
+  const event = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download research.docx', exact: true }).click();
+  expect((await event).suggestedFilename()).toBe('research.docx');
+  expect(requestedPreview).toBe(false);
+  await expect(page.locator('.application-file-modal')).toHaveCount(0);
+});
+
+test('VIEW opens files while a read-receipt request is still pending', async ({ page }) => {
+  await setup(page);
+  await mockApplicationBell(page, review({ FileCount: 1, FirstFileName: 'proposal.pdf', Requirements: [{ DocumentID: 1, FileName: 'proposal.pdf' }] }));
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/notifications/51/read', async route => {
+    await gate;
+    await route.fulfill({ json: { readAt: '2026-10-16T11:00:00Z', unreadCount: 0 } });
+  });
+  try {
+    await page.goto('/group');
+    await viewBellApplication(page);
+    await expect(page.getByRole('dialog', { name: 'Application details', exact: true }).getByText('proposal.pdf', { exact: true })).toBeVisible({ timeout: 2000 });
+  } finally { release(); }
+  await expect(page.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible();
 });

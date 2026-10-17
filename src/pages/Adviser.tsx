@@ -49,10 +49,6 @@ export default function Adviser() {
   const [groupApplication, setGroupApplication] = useState<AdviserApplicationStatus | null>(null);
   const [selectedApplication, setSelectedApplication] = useState<AdviserApplicationStatus | null>(null);
   const [selectedError, setSelectedError] = useState('');
-  const [editOpen, setEditOpen]   = useState(false);
-  const [editBio, setEditBio]     = useState('');
-  const [editGender, setEditGender] = useState('');
-  const [editRequirements, setEditRequirements] = useState<string[]>([]);
   useEffect(() => {
     const refresh = () => setRevision(current => current + 1);
     window.addEventListener('juan-finder:adviser-applications-changed', refresh);
@@ -170,31 +166,6 @@ export default function Adviser() {
     }
   };
 
-  const openEdit = () => {
-    const ownProfile = advisers.find(adviser => adviser.id === String(user?.id));
-    setEditBio(ownProfile?.bio === 'No bio provided yet.' ? '' : ownProfile?.bio || '');
-    setEditGender(ownProfile?.gender || '');
-    setEditRequirements(ownProfile?.requirements.length ? [...ownProfile.requirements] : ['']);
-    setEditOpen(true);
-  };
-
-  const saveEdit = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/adviser/profile`, {
-        method: 'PATCH', headers: authHeaders(user, viewRole, { 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ bio: editBio, gender: editGender, requirements: editRequirements }),
-      });
-      await readApiResponse(response, 'Unable to save adviser details. Please try again.');
-      const savedRequirements = editRequirements.map(item => item.trim()).filter(Boolean);
-      setAdvisers(current => current.map(adviser => adviser.id === String(user?.id) ? { ...adviser, bio: editBio || 'No bio provided yet.', gender: editGender, requirements: savedRequirements } : adviser));
-      setEditOpen(false);
-      setToast('Adviser details saved.');
-    } catch (requestError) {
-      if (import.meta.env.DEV && !(requestError instanceof ApiResponseError)) console.error('Unable to save adviser details.', requestError);
-      setToast(displayRequestError(requestError, 'Unable to save adviser details. Please try again.'));
-    }
-  };
-
   return (
     <Layout>
       <div className="adviser-body">
@@ -241,7 +212,7 @@ export default function Adviser() {
               <i className="ti ti-arrow-right"></i>
             </button>
           </div>
-          {effectiveRole === 'adviser' && <button className="adv-back-btn" onClick={openEdit}><i className="ti ti-edit"></i> EDIT DETAILS</button>}
+          {effectiveRole === 'adviser' && <button className="adv-back-btn" onClick={() => navigate('/settings')}><i className="ti ti-edit"></i> SETTINGS</button>}
         </div>
 
         <div className="adviser-table-card">
@@ -289,35 +260,6 @@ export default function Adviser() {
         </div>
 
       </div>
-
-      <Modal show={editOpen} onHide={() => setEditOpen(false)} centered className="jf-modal">
-        <Modal.Header closeButton closeVariant="white" className="flex-column align-items-center">
-          <div className="modal-icon mb-2"><i className="ti ti-edit"></i></div>
-          <div className="modal-title-text">Edit Adviser Details</div>
-          <div className="modal-sub-text">Set the profile, requirements, and capacity students will see.</div>
-        </Modal.Header>
-        <Modal.Body className="d-flex flex-column gap-3">
-          <label className="jf-label">Bio<textarea className="jf-input" rows={3} value={editBio} onChange={event => setEditBio(event.target.value)} /></label>
-          <label className="jf-label">Gender
-            <select className="jf-input" value={editGender} onChange={event => setEditGender(event.target.value)}>
-              <option value="">Select gender</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Prefer not to say">Prefer not to say</option>
-            </select>
-          </label>
-          <div className="jf-label">Requirements</div>
-          {editRequirements.map((requirement, index) => (
-            <div key={index} className="d-flex align-items-center gap-2">
-              <span aria-label={`Requirement ${index + 1}`} style={{ minWidth: 24 }}>{index + 1}.</span>
-              <input className="jf-input flex-grow-1" aria-label={`Requirement ${index + 1} description`} value={requirement} maxLength={250} onChange={event => setEditRequirements(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} />
-              <Button variant="outline-danger" aria-label={`Delete requirement ${index + 1}`} onClick={() => setEditRequirements(current => current.filter((_, itemIndex) => itemIndex !== index))}><i className="ti ti-trash"></i></Button>
-            </div>
-          ))}
-          <Button variant="outline-warning" onClick={() => setEditRequirements(current => [...current, ''])}><i className="ti ti-plus"></i> Add Requirement</Button>
-        </Modal.Body>
-        <Modal.Footer className="gap-2"><Button className="flex-grow-1" style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:700 }} onClick={() => void saveEdit()}>Save</Button><Button className="flex-grow-1" style={{ background:'rgba(255,255,255,.08)', border:'none', color:'rgba(255,255,255,.55)' }} onClick={() => setEditOpen(false)}>Cancel</Button></Modal.Footer>
-      </Modal>
 
       {/*Apply Modal*/}
       <Modal show={!!modalAdviser} onHide={() => { setModalAdviser(null); setRequirementFiles([]); setLoadError(''); }} centered className="jf-modal">

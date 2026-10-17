@@ -1,145 +1,80 @@
-import { useEffect, useState } from 'react';
-import { Row, Col, Form } from 'react-bootstrap';
-import { Modal, Button } from 'react-bootstrap';
+﻿import { Fragment, useEffect, useState } from 'react';
 import Layout from '../components/Layout';
-import Calendar from '../components/Calendar';
 import { useAuth } from '../context/useAuth';
 import { API_BASE_URL, readApiResponse } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
-import { ADVISER_ANNOUNCEMENT } from '../data/datas';
-import type { AdviserAnnouncement } from '../data/datas';
-import '../styles/adviser-dashboard.css';
+import { createAdviserExport, matchesStudent, type AdviserReport, type ReportKind } from '../data/adviserReport';
+import '../styles/admin.css';
+import '../styles/workspace.css';
 
+const PAGE_SIZE = 10;
 export default function AdviserDashboard() {
   const { user, viewRole } = useAuth();
-  const [studentMemberCount, setStudentMemberCount] = useState(0);
-  const [groupCount, setGroupCount] = useState(0);
-  const [remainingSlots, setRemainingSlots] = useState(0);
+  const [report, setReport] = useState<AdviserReport | null>(null);
+  const [query, setQuery] = useState('');
+  const [loadedQuery, setLoadedQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [expanded, setExpanded] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [kind, setKind] = useState<ReportKind>('groups');
   const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
   const [revision, setRevision] = useState(0);
-  const [announcement, setAnnouncement] = useState<AdviserAnnouncement>(() => {
-    const saved = sessionStorage.getItem('jf_adviser_announcement');
-    return saved ? JSON.parse(saved) : ADVISER_ANNOUNCEMENT;
-  });
-  const [editOpen, setEditOpen] = useState(false);
-  const [detailInput, setDetailInput] = useState('');
-
   useEffect(() => {
-    const refresh = () => setRevision(current => current + 1);
+    const refresh = () => setRevision(n => n + 1);
     window.addEventListener('juan-finder:adviser-applications-changed', refresh);
-    return () => window.removeEventListener('juan-finder:adviser-applications-changed', refresh);
+    window.addEventListener('focus', refresh);
+    return () => { window.removeEventListener('juan-finder:adviser-applications-changed', refresh); window.removeEventListener('focus', refresh); };
   }, []);
-
   useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const [students, advisers] = await Promise.all([
-          fetch(`${API_BASE_URL}/students`, { headers: authHeaders(user, viewRole) }).then(response => readApiResponse<unknown[]>(response, 'Unable to load students.')),
-          fetch(`${API_BASE_URL}/advisers`, { headers: authHeaders(user, viewRole) }).then(response => readApiResponse<{ UserID: number; Course: string; AssignedGroups: number; RemainingSlots: number }[]>(response, 'Unable to load slots.')),
-        ]);
-        if (cancelled) return;
-        const own = advisers.find(adviser => adviser.UserID === Number(user.id));
-        setStudentMemberCount(students.length);
-        setGroupCount(own?.AssignedGroups ?? 0);
-        setRemainingSlots(own?.RemainingSlots ?? 0);
-        setError('');
-      } catch (requestError) {
-        if (!cancelled) setError(requestError instanceof Error ? requestError.message : 'Unable to refresh applications.');
-      }
-    };
-    void load();
-    return () => { cancelled = true; };
-  }, [user, viewRole, revision]);
-
-  const openEdit = () => {
-    setDetailInput(announcement.detail);
-    setEditOpen(true);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      fetch(`${API_BASE_URL}/adviser/dashboard?search=${encodeURIComponent(query.trim())}`, { headers: authHeaders(user, viewRole), signal: controller.signal })
+        .then(r => readApiResponse<AdviserReport>(r, 'Unable to load your dashboard.'))
+        .then(data => { if (!controller.signal.aborted) { setReport(data); setLoadedQuery(query); setPage(1); setExpanded([]); setError(''); } })
+        .catch(err => { if (!controller.signal.aborted) { setError(err.message); setReport(null); setLoadedQuery(query); } })
+        .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [user, viewRole, query, revision]);
+  const busy = loading || query !== loadedQuery;
+  const groups = report?.Groups || [];
+  const pages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  const exportReport = async (format: 'pdf' | 'xlsx') => {
+    setExporting(true); setFeedback(''); setError('');
+    try {
+      // Reauthorize and reload every matching group; no client-supplied adviser/group IDs.
+      const fresh = await fetch(`${API_BASE_URL}/adviser/dashboard?search=${encodeURIComponent(query.trim())}`, { headers: authHeaders(user, viewRole) }).then(r => readApiResponse<AdviserReport>(r, 'Unable to load export records.'));
+      const blob = await createAdviserExport(fresh, kind, format, query);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = `JuanFinder-${kind}-${new Date().toISOString().slice(0, 10)}.${format}`;
+      document.body.appendChild(anchor); anchor.click(); anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setFeedback(`${format === 'pdf' ? 'PDF' : 'Excel'} report downloaded.`);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Export failed. Please try again.'); }
+    finally { setExporting(false); }
   };
-
-  const saveAnnouncement = () => {
-    const updated: AdviserAnnouncement = {
-      ...announcement,
-      detail: detailInput || ADVISER_ANNOUNCEMENT.detail,
-      announcerName: user?.name,
-      publishedAt: new Date().toISOString(),
-    };
-    setAnnouncement(updated);
-    sessionStorage.setItem('jf_adviser_announcement', JSON.stringify(updated));
-    setEditOpen(false);
-  };
-
-  return (
-    <Layout>
-      <div className="dashboard-content">
-        {error && <div className="alert alert-danger" role="alert">{error}</div>}
-        <Row className="g-3" style={{ flexShrink:0 }}>
-          <Col xs={12} md={6}>
-            <div className="stat-card h-100">
-              <div className="stat-label"><i className="ti ti-settings"></i> Group</div>
-              <div className="stat-num">{groupCount}</div>
-              <div>{remainingSlots} slots remaining</div>
-            </div>
-          </Col>
-          <Col xs={12} md={6}>
-            <div className="stat-card h-100">
-              <div className="stat-label"><i className="ti ti-user"></i> Student Member</div>
-              <div className="stat-num">{studentMemberCount}</div>
-            </div>
-          </Col>
-        </Row>
-
-        <Row className="g-3 mt-0" style={{ flex:1, minHeight:0 }}>
-          <Col xs={12} lg={8}>
-            <div className="adv-announce-card">
-              <div className="adv-announce-header">
-                <div className="adv-announce-header-left">
-                  <div className="adv-announce-icon"><i className="ti ti-speakerphone"></i></div>
-                  <div className="adv-announce-title">Announcement</div>
-                </div>
-                <button className="adv-announce-add" onClick={openEdit}><i className="ti ti-plus"></i></button>
-              </div>
-              <div className="adv-announce-body">
-                <div className="adv-announce-body-text">{announcement.detail}</div>
-                {announcement.announcerName && (
-                  <div className="adv-announce-meta">
-                    <span className="adv-announce-meta-label">Announced by:</span>
-                    <span className="adv-announce-meta-value">{announcement.announcerName}</span>
-                  </div>
-                )}
-                {announcement.publishedAt && (
-                  <div className="adv-announce-date">Posted {announcement.publishedAt}</div>
-                )}
-              </div>
-            </div>
-          </Col>
-          <Col xs={12} lg={4}>
-            <Calendar />
-          </Col>
-        </Row>
-      </div>
-
-      {/*Edit Announcement Modal*/}
-      <Modal show={editOpen} onHide={() => setEditOpen(false)} centered className="jf-modal">
-        <Modal.Header closeButton closeVariant="white" className="flex-column align-items-center">
-          <div className="modal-icon mb-2"><i className="ti ti-speakerphone"></i></div>
-          <div className="modal-title-text">Post Announcement</div>
-          <div className="modal-sub-text">Share an update with your advisees</div>
-        </Modal.Header>
-        <Modal.Body>
-          <Form>
-            <Form.Group>
-              <Form.Label className="jf-label">Announcement Detail</Form.Label>
-              <Form.Control as="textarea" className="jf-input" rows={4} value={detailInput} onChange={e => setDetailInput(e.target.value)} placeholder="Write your announcement..." />
-            </Form.Group>
-          </Form>
-        </Modal.Body>
-        <Modal.Footer className="gap-2">
-          <Button className="flex-grow-1" style={{ background:'var(--amber)', border:'none', color:'var(--navy)', fontWeight:700, borderRadius:10 }} onClick={saveAnnouncement}>Post</Button>
-          <Button className="flex-grow-1" style={{ background:'rgba(255,255,255,.08)', border:'none', color:'rgba(255,255,255,.55)', fontWeight:700, borderRadius:10 }} onClick={() => setEditOpen(false)}>Cancel</Button>
-        </Modal.Footer>
-      </Modal>
-    </Layout>
-  );
+  return <Layout><main className="admin-body adviser-workspace">
+    <header className="admin-heading"><div><div className="admin-eyebrow">ADVISER WORKSPACE</div><h1>Dashboard</h1><p>Your assigned groups and student members.</p></div><button className="admin-refresh" aria-label="Refresh dashboard" disabled={exporting} onClick={() => { setLoading(true); setRevision(n => n + 1); }}><span aria-hidden="true">&#8635;</span></button></header>
+    {error && <div className="alert alert-danger" role="alert">{error}</div>}
+    {feedback && <div className="alert alert-success" role="status">{feedback}</div>}
+    <div className="admin-stats">{[
+      ['Groups', report?.Summary.Groups, 'ti-users-group'], ['Student Members', report?.Summary.StudentMembers, 'ti-users'], ['Available Slots', report?.Summary.AvailableSlots, 'ti-layout-grid'],
+    ].map(([label, value, icon]) => <div className="admin-stat" key={label}><i className={`ti ${icon}`} /><span>{value ?? '—'}</span><small>{label}</small></div>)}</div>
+    <section className="admin-panel" aria-labelledby="student-groups-title">
+      <div className="admin-panel-head"><h2 id="student-groups-title">Student Groups</h2><div className="admin-panel-actions">
+        <label className="workspace-search">Search Student<input aria-label="Search Student" placeholder="Name or student ID" maxLength={200} value={query} onChange={e => { setQuery(e.target.value); setLoading(true); setFeedback(''); }} /></label>
+        <label className="workspace-export-kind">Export contents<select aria-label="Export contents" value={kind} onChange={e => setKind(e.target.value as ReportKind)}><option value="groups">Group summary</option><option value="students">Student member list</option></select></label>
+        <button className="admin-add" disabled={busy || exporting || !groups.length} onClick={() => void exportReport('pdf')}>Export PDF</button><button className="admin-add" disabled={busy || exporting || !groups.length} onClick={() => void exportReport('xlsx')}>Export Excel</button>
+      </div></div>
+      <p className="workspace-hint">{exporting ? 'Preparing report…' : 'Exports include all matching pages. Student lists include only students matching your search.'}</p>
+      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Group Name</th><th>Course</th><th>Member Count</th><th>View</th></tr></thead><tbody>
+        {busy ? <tr><td colSpan={4} role="status">Loading groups…</td></tr> : !groups.length ? <tr><td colSpan={4}>No matching student groups.</td></tr> : groups.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(group => <Fragment key={group.GroupID}>
+          <tr><td><strong>{group.GroupName}</strong></td><td>{group.Course}</td><td>{group.MemberCount}</td><td><button className="admin-action" aria-label={`View ${group.GroupName} members`} aria-expanded={expanded.includes(group.GroupID)} aria-controls={`members-${group.GroupID}`} onClick={() => setExpanded(current => current.includes(group.GroupID) ? current.filter(id => id !== group.GroupID) : [...current, group.GroupID])}>{expanded.includes(group.GroupID) ? 'Hide' : 'View'}</button></td></tr>
+          {expanded.includes(group.GroupID) && <tr id={`members-${group.GroupID}`}><td colSpan={4}><table className="workspace-members" aria-label={`${group.GroupName} members`}><thead><tr><th>Student ID</th><th>Name</th><th>Course</th></tr></thead><tbody>{group.Members.map(student => <tr key={student.UserID} className={query.trim() && matchesStudent(student, query) ? 'search-match' : ''}><td>{student.UserCode}</td><td>{student.Name}{student.IsLeader && <small>Group leader</small>}</td><td>{student.Course}</td></tr>)}{!group.Members.length && <tr><td colSpan={3}>No student members.</td></tr>}</tbody></table></td></tr>}
+        </Fragment>)}
+      </tbody></table></div>
+      <div className="admin-pagination"><span>{groups.length} groups · Page {page} of {pages}</span><button disabled={busy || page <= 1} onClick={() => setPage(n => n - 1)}>Previous</button><button disabled={busy || page >= pages} onClick={() => setPage(n => n + 1)}>Next</button></div>
+    </section>
+  </main></Layout>;
 }

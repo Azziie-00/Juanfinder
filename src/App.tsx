@@ -10,6 +10,7 @@ import MyGroup           from './pages/MyGroup';
 import Adviser           from './pages/Adviser';
 import Library           from './pages/Library';
 import Profile           from './pages/Profile';
+import Settings from './pages/Settings';
 import Advisee           from './pages/Advisee';
 import AdviserGroup      from './pages/AdviserGroup';
 import StudentList       from './pages/StudentList';
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="/mygroup"  element={<ProtectedRoute><MyGroup /></ProtectedRoute>} />
           <Route path="/adviser"  element={<ProtectedRoute><Adviser /></ProtectedRoute>} />
           <Route path="/library"  element={<ProtectedRoute><Library /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute roles={['student', 'adviser']}><Settings /></ProtectedRoute>} />
           <Route path="/profile"  element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/advisee"  element={<ProtectedRoute><Advisee /></ProtectedRoute>} />
           <Route path="/group"    element={<ProtectedRoute><AdviserGroup /></ProtectedRoute>} />
