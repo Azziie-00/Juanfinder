@@ -4,7 +4,7 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test group-recommendations.test.js adviser-workflow.test.js adviser-recommendations.test.js",
     "start": "node server.js"
   },
   "keywords": [],
@@ -16,6 +16,7 @@
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "word-extractor": "^1.0.4"
   }
 }

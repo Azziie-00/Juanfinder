@@ -4,7 +4,10 @@ from pathlib import Path
 from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException, UploadFile)
 from pydantic import BaseModel, Field
 from document_parser import extract_document
-from ai_service import AIServiceError, analyze_member, chat_reply, generate_cv_titles, generate_titles
+from ai_service import AIServiceError, OLLAMA_MODEL, analyze_member, chat_reply, generate_cv_titles, generate_titles
+from group_recommendations import recommend_groups
+from adviser_recommendations import recommend_advisers
+from typing import Annotated
 
 app = FastAPI(title="JuanFinder AI Service", version="0.1.0")
 AI_SERVICE_TOKEN = os.getenv("AI_SERVICE_TOKEN", "").strip()
@@ -33,6 +36,42 @@ MAX_FILE_BYTES = 10 * 1024 * 1024
 class TitleRequest(BaseModel):
     member_profiles: list[dict] = Field(min_length=1, max_length=4)
 
+class GroupCandidate(BaseModel):
+    group_id: int = Field(gt=0, strict=True)
+    specialty: str = Field(max_length=200)
+    description: str = Field(max_length=500)
+
+class GroupRecommendationRequest(BaseModel):
+    skills: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(min_length=1, max_length=30)
+    groups: list[GroupCandidate] = Field(min_length=1, max_length=12)
+
+@app.post("/recommend-groups", dependencies=[Depends(require_ai_service_token)])
+def recommend_groups_endpoint(request: GroupRecommendationRequest):
+    try:
+        return recommend_groups(request.skills, [group.model_dump() for group in request.groups])
+    except AIServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+class AdviserGroupContext(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    project_title: str = Field(default="", max_length=300)
+    description: str = Field(min_length=1, max_length=1500)
+
+class AdviserCandidate(BaseModel):
+    adviser_id: int = Field(gt=0, strict=True)
+    expertise: str = Field(min_length=1, max_length=1000)
+
+class AdviserRecommendationRequest(BaseModel):
+    group: AdviserGroupContext
+    advisers: list[AdviserCandidate] = Field(min_length=1, max_length=12)
+
+@app.post("/recommend-advisers", dependencies=[Depends(require_ai_service_token)])
+def recommend_advisers_endpoint(request: AdviserRecommendationRequest):
+    try:
+        return recommend_advisers(request.group.model_dump(), [a.model_dump() for a in request.advisers])
+    except AIServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
 class ChatMessage(BaseModel):
     role: str
     content: str = Field(min_length=1, max_length=4000)
@@ -47,7 +86,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": os.getenv("OLLAMA_MODEL", "llama3.2:1b")}
+    return {"status": "ok", "model": OLLAMA_MODEL}
 
 @app.post("/analyze-member", dependencies=[Depends(require_ai_service_token)])
 async def analyze_member_endpoint(

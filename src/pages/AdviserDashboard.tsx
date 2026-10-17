@@ -4,15 +4,19 @@ import { Modal, Button } from 'react-bootstrap';
 import Layout from '../components/Layout';
 import Calendar from '../components/Calendar';
 import { useAuth } from '../context/useAuth';
-import { API_BASE_URL } from '../data/api';
+import { API_BASE_URL, readApiResponse } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
-import { ADVISER_STATS, ADVISER_ANNOUNCEMENT } from '../data/datas';
+import { ADVISER_ANNOUNCEMENT } from '../data/datas';
 import type { AdviserAnnouncement } from '../data/datas';
 import '../styles/adviser-dashboard.css';
 
 export default function AdviserDashboard() {
   const { user, viewRole } = useAuth();
   const [studentMemberCount, setStudentMemberCount] = useState(0);
+  const [groupCount, setGroupCount] = useState(0);
+  const [remainingSlots, setRemainingSlots] = useState(0);
+  const [error, setError] = useState('');
+  const [revision, setRevision] = useState(0);
   const [announcement, setAnnouncement] = useState<AdviserAnnouncement>(() => {
     const saved = sessionStorage.getItem('jf_adviser_announcement');
     return saved ? JSON.parse(saved) : ADVISER_ANNOUNCEMENT;
@@ -21,16 +25,33 @@ export default function AdviserDashboard() {
   const [detailInput, setDetailInput] = useState('');
 
   useEffect(() => {
+    const refresh = () => setRevision(current => current + 1);
+    window.addEventListener('juan-finder:adviser-applications-changed', refresh);
+    return () => window.removeEventListener('juan-finder:adviser-applications-changed', refresh);
+  }, []);
+
+  useEffect(() => {
     if (!user) return;
-    fetch(`${API_BASE_URL}/students`, { headers: authHeaders(user, viewRole) })
-      .then(async response => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || 'Unable to load student members.');
-        return data as unknown[];
-      })
-      .then(students => setStudentMemberCount(students.length))
-      .catch(error => console.error('Unable to load adviser student-member count:', error));
-  }, [user, viewRole]);
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [students, advisers] = await Promise.all([
+          fetch(`${API_BASE_URL}/students`, { headers: authHeaders(user, viewRole) }).then(response => readApiResponse<unknown[]>(response, 'Unable to load students.')),
+          fetch(`${API_BASE_URL}/advisers`, { headers: authHeaders(user, viewRole) }).then(response => readApiResponse<{ UserID: number; Course: string; AssignedGroups: number; RemainingSlots: number }[]>(response, 'Unable to load slots.')),
+        ]);
+        if (cancelled) return;
+        const own = advisers.find(adviser => adviser.UserID === Number(user.id));
+        setStudentMemberCount(students.length);
+        setGroupCount(own?.AssignedGroups ?? 0);
+        setRemainingSlots(own?.RemainingSlots ?? 0);
+        setError('');
+      } catch (requestError) {
+        if (!cancelled) setError(requestError instanceof Error ? requestError.message : 'Unable to refresh applications.');
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [user, viewRole, revision]);
 
   const openEdit = () => {
     setDetailInput(announcement.detail);
@@ -38,7 +59,12 @@ export default function AdviserDashboard() {
   };
 
   const saveAnnouncement = () => {
-    const updated: AdviserAnnouncement = { ...announcement, detail: detailInput || ADVISER_ANNOUNCEMENT.detail };
+    const updated: AdviserAnnouncement = {
+      ...announcement,
+      detail: detailInput || ADVISER_ANNOUNCEMENT.detail,
+      announcerName: user?.name,
+      publishedAt: new Date().toISOString(),
+    };
     setAnnouncement(updated);
     sessionStorage.setItem('jf_adviser_announcement', JSON.stringify(updated));
     setEditOpen(false);
@@ -47,11 +73,13 @@ export default function AdviserDashboard() {
   return (
     <Layout>
       <div className="dashboard-content">
+        {error && <div className="alert alert-danger" role="alert">{error}</div>}
         <Row className="g-3" style={{ flexShrink:0 }}>
           <Col xs={12} md={6}>
             <div className="stat-card h-100">
               <div className="stat-label"><i className="ti ti-settings"></i> Group</div>
-              <div className="stat-num">{ADVISER_STATS.group}</div>
+              <div className="stat-num">{groupCount}</div>
+              <div>{remainingSlots} slots remaining</div>
             </div>
           </Col>
           <Col xs={12} md={6}>
@@ -74,6 +102,15 @@ export default function AdviserDashboard() {
               </div>
               <div className="adv-announce-body">
                 <div className="adv-announce-body-text">{announcement.detail}</div>
+                {announcement.announcerName && (
+                  <div className="adv-announce-meta">
+                    <span className="adv-announce-meta-label">Announced by:</span>
+                    <span className="adv-announce-meta-value">{announcement.announcerName}</span>
+                  </div>
+                )}
+                {announcement.publishedAt && (
+                  <div className="adv-announce-date">Posted {announcement.publishedAt}</div>
+                )}
               </div>
             </div>
           </Col>

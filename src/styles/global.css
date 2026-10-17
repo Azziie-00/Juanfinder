@@ -121,11 +121,11 @@ a { text-decoration: none; color: inherit; }
 .dashboard-lower-row > [class*="col-"] { min-width: 0; }
 
 @media (min-width: 992px) {
-  .dashboard-lower-row > .col-lg-4 { position: relative; min-height: 0; }
-  .dashboard-lower-row > .col-lg-4 > .ai-panel {
+  .dashboard-lower-row > .dashboard-assistant-column { position: relative; min-height: 0; }
+  .dashboard-lower-row > .dashboard-assistant-column > .ai-panel {
     position: absolute;
-    inset: 0;
-    width: 100%;
+    inset: 0 calc(var(--bs-gutter-x, 1rem) / 2);
+    width: auto;
     height: auto;
     min-height: 0;
     max-height: none;
@@ -136,9 +136,13 @@ a { text-decoration: none; color: inherit; }
 .announce-card { background: var(--blue-card); border-radius: 14px; overflow: hidden; flex-shrink: 0; }
 .announce-head { background: var(--navy); display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
 .adviser-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--green); display: flex; align-items: center; justify-content: center; font-size: 15px; color: var(--green-dark); }
-.announce-label { font-size: 13px; font-weight: 700; color: var(--amber); text-transform: uppercase; letter-spacing: .3px; }
-.announce-body  { padding: 12px 14px; }
-.announce-msg   { background: var(--navy); border-radius: 8px; padding: 10px 14px; font-size: 13px; color: rgba(255,255,255,.6); text-align: center; }
+.announce-title { font-size: 13px; font-weight: 700; color: var(--amber); text-transform: uppercase; letter-spacing: .3px; }
+.announce-body  { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.announce-content { color: var(--navy); font-size: 15px; font-weight: 700; line-height: 1.6; }
+.announce-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: rgba(26,42,74,.76); }
+.announce-meta-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.announce-meta-value { font-size: 14px; font-weight: 700; }
+.announce-date { font-size: 11px; color: rgba(26,42,74,.72); font-weight: 600; }
 
 /*Groups*/
 .groups-card   { background: var(--blue-card); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; flex: 0 0 280px; height: 280px; min-height: 280px; max-height: 280px; overflow: hidden; }
@@ -259,8 +263,8 @@ a { text-decoration: none; color: inherit; }
 
 /* On tablet/mobile the dashboard columns stack, so give JUAN-AI its own usable height. */
 @media (max-width: 991.98px) {
-  .dashboard-lower-row > .col-lg-4 { position: static; }
-  .dashboard-lower-row > .col-lg-4 > .ai-panel {
+  .dashboard-lower-row > .dashboard-assistant-column { position: static; }
+  .dashboard-lower-row > .dashboard-assistant-column > .ai-panel {
     position: relative;
     inset: auto;
     height: min(760px, calc(100vh - 110px));

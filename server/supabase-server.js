@@ -9,6 +9,9 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
 const cors = require("cors");
+const { parseApplicationFiles } = require("./application-files");
+const { createRecommendationHandler } = require("./group-recommendations");
+const { createAdviserRecommendationHandler } = require("./adviser-recommendations");
 
 const app = express();
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -50,12 +53,15 @@ const userDto = (user) => ({
     Role: user.role, IsActive: user.is_active,
     Status: user.expires_at && new Date(user.expires_at) <= new Date() ? "Expired" : user.is_active ? "Active" : "Disabled",
     CreatedAt: user.created_at, Course: user.course, ExpiresAt: user.expires_at,
+    AdviserCapacity: user.role === "adviser" ? Number(user.adviser_capacity ?? 10) : undefined,
     AdviseeCount: Number(user.advisee_count || 0),
 });
 const groupDto = (group) => ({
     GroupID: Number(group.group_id), GroupName: group.group_name, Course: group.course,
     Specialty: group.specialty, Description: group.description, OwnerID: group.owner_id == null ? null : Number(group.owner_id),
     Status: group.finalized_at ? "Finalized" : group.status, FinalizedAt: group.finalized_at || null,
+    AdviserID: group.adviser_id == null ? null : Number(group.adviser_id),
+    AdviserAssignedAt: group.adviser_assigned_at || null,
     MaxMembers: group.max_members, CreatedAt: group.created_at,
 });
 const rpcError = (res, error, messages) => {
@@ -78,7 +84,45 @@ const RPC_MESSAGES = {
 };
 
 const USER_ID_PATTERN = /^\d{1,11}$/;
+const applicationDocumentDto = document => ({
+    DocumentID: Number(document.document_id), FileName: document.file_name, FileType: document.file_type,
+    FileSize: Number(document.file_size), UploadedAt: document.created_at,
+});
 const normalizeCourse = (value) => String(value ?? "").trim().toLocaleLowerCase();
+const resolveAccountCourse = async (value) => {
+    const { data, error } = await supabase.from("courses").select("course_code");
+    if (error) return { error };
+    const course = data.find(item => normalizeCourse(item.course_code) === normalizeCourse(value))?.course_code;
+    return { course: course && normalizeCourse(course) !== "unspecified" ? course : null };
+};
+const adviserCoursesMatch = (groupCourse, adviserCourse) => {
+    const group = normalizeCourse(groupCourse);
+    const adviser = normalizeCourse(adviserCourse);
+    return Boolean(group && group !== "unspecified" && adviser && adviser !== "unspecified" && group === adviser);
+};
+const checkApplicationCourses = async (res, groupId, adviserId) => {
+    const [group, adviser] = await Promise.all([
+        supabase.from("groups").select("course").eq("group_id", groupId).maybeSingle(),
+        supabase.from("users").select("course").eq("user_id", adviserId).eq("role", "adviser").maybeSingle(),
+    ]);
+    if (group.error || adviser.error) { adviserWorkflowError(res, group.error || adviser.error); return false; }
+    if (!group.data || !adviser.data) { res.status(404).json({ success: false, message: "Group or adviser not found." }); return false; }
+    if (!adviserCoursesMatch(group.data.course, adviser.data.course)) {
+        res.status(409).json({ success: false, message: "The adviser course must match the group course. Blank or Unspecified courses cannot receive applications." });
+        return false;
+    }
+    return true;
+};
+const adviserWorkflowError = (res, error) => {
+    if (process.env.NODE_ENV !== "production") console.warn("Adviser workflow request failed.", { code: error.code || "unknown" });
+    if (["42P01", "42703", "42883", "42501", "PGRST202", "PGRST204", "PGRST205"].includes(error.code)) {
+        return res.status(503).json({ success: false, message: "Adviser applications are temporarily unavailable. Please contact an administrator.", repair: "Check server/ADVISER_WORKFLOW.md and apply missing migrations through 013." });
+    }
+    const message = error.message || "Unable to process this application.";
+    const status = /Only |active students/.test(message) ? 403 : /not found/i.test(message) ? 404
+        : /already|unavailable|finalized|course|assigned|response is required/i.test(message) || error.code === "23505" ? 409 : 500;
+    return res.status(status).json({ success: false, message: status === 500 ? "Unable to process this application. Please try again." : message });
+};
 const getPasswordRequirements = (password) => {
     const missing = [];
     if (!/[A-Z]/.test(String(password))) missing.push('one uppercase letter');
@@ -429,39 +473,24 @@ app.delete("/api/portfolio/:id", getUser, async (req, res) => {
     res.json({ success: true });
 });
 
+app.post("/api/advisers/recommendations", getUser, requireStudent,
+    createAdviserRecommendationHandler({ supabase, callAIService }));
+
 app.get("/api/advisers", getUser, async (req, res) => {
-    const adviserQuery = supabase.from("users").select("user_id,user_code,username,name,bio,gender,requirements,course,expires_at").eq("role", "adviser").eq("is_active", true).order("name");
+    const adviserQuery = supabase.from("adviser_slot_availability").select("*").eq("is_active", true).order("name");
     const { data, error } = await adviserQuery;
-    if (error) return res.status(500).json({ success: false, message: "Unable to load advisers." });
+    if (error) return adviserWorkflowError(res, error);
     const eligibleAdvisers = data.filter((user) =>
         !user.expires_at || new Date(user.expires_at) > new Date()
     );
-    const adviserIds = eligibleAdvisers.map((user) => Number(user.user_id));
-    const assignedStudentsResult = adviserIds.length
-        ? await supabase.from("users").select("user_id,adviser_id").eq("role", "student").in("adviser_id", adviserIds)
-        : { data: [], error: null };
-    if (assignedStudentsResult.error) return res.status(500).json({ success: false, message: "Unable to load adviser availability." });
-    const studentIds = assignedStudentsResult.data.map((student) => Number(student.user_id));
-    const membershipsResult = studentIds.length
-        ? await supabase.from("group_members").select("group_id,user_id").in("user_id", studentIds)
-        : { data: [], error: null };
-    if (membershipsResult.error) return res.status(500).json({ success: false, message: "Unable to load adviser availability." });
-    const groupCounts = new Map();
-    const studentsById = new Map(assignedStudentsResult.data.map((student) => [Number(student.user_id), Number(student.adviser_id)]));
-    for (const membership of membershipsResult.data) {
-        const adviserId = studentsById.get(Number(membership.user_id));
-        if (adviserId == null) continue;
-        const groups = groupCounts.get(adviserId) || new Set();
-        groups.add(Number(membership.group_id));
-        groupCounts.set(adviserId, groups);
-    }
     res.json(eligibleAdvisers.map((user) => {
-        const assignedGroups = groupCounts.get(Number(user.user_id))?.size || 0;
+        const assignedGroups = Number(user.assigned_groups);
         return {
             UserID: Number(user.user_id), UserCode: user.user_code, Username: user.username,
             Name: user.name, Bio: user.bio, Gender: user.gender, Requirements: user.requirements,
-            Course: user.course, Availability: 10, AssignedGroups: assignedGroups,
-            HasCapacity: assignedGroups < 10,
+            Course: user.course, Availability: Number(user.adviser_capacity ?? 10), AssignedGroups: assignedGroups,
+            HasCapacity: assignedGroups < Number(user.adviser_capacity ?? 10),
+            RemainingSlots: Number(user.remaining_slots),
         };
     }));
 });
@@ -511,30 +540,18 @@ app.get("/api/adviser/groups", getUser, async (req, res) => {
     if (req.effectiveRole !== "adviser") {
         return res.status(403).json({ success: false, message: "Only advisers can view assigned student groups." });
     }
-    const { data: assignedStudents, error: studentsError } = await supabase.from("users")
-        .select("user_id").eq("role", "student").eq("is_active", true).eq("adviser_id", req.user.user_id);
-    if (studentsError) return res.status(500).json({ success: false, message: "Unable to load assigned students." });
-    const studentIds = assignedStudents.map((student) => Number(student.user_id));
-    if (!studentIds.length) return res.json([]);
-
-    const { data: memberships, error: membershipsError } = await supabase.from("group_members")
-        .select("group_id,user_id").in("user_id", studentIds);
-    if (membershipsError) return res.status(500).json({ success: false, message: "Unable to load assigned student group memberships." });
-    const { data: ownedGroups, error: ownedGroupsError } = await supabase.from("groups")
-        .select("group_id").in("owner_id", studentIds);
-    if (ownedGroupsError) return res.status(500).json({ success: false, message: "Unable to load groups owned by assigned students." });
-    const groupIds = [...new Set([
-        ...memberships.map((membership) => Number(membership.group_id)),
-        ...ownedGroups.map((group) => Number(group.group_id)),
-    ])];
+    const { data: assignedGroups, error: assignedError } = await supabase.from("groups")
+        .select("group_id").eq("adviser_id", req.user.user_id);
+    if (assignedError) return adviserWorkflowError(res, assignedError);
+    const groupIds = assignedGroups.map(group => Number(group.group_id));
     if (!groupIds.length) return res.json([]);
 
     const [groupsResult, membersResult] = await Promise.all([
-        supabase.from("groups").select("group_id,group_name,course,specialty,description,owner_id,status,finalized_at,max_members,created_at").in("group_id", groupIds).order("created_at", { ascending: false }),
+        supabase.from("groups").select("*").in("group_id", groupIds).order("created_at", { ascending: false }),
         supabase.from("group_members").select("group_id,user_id").in("group_id", groupIds),
     ]);
     if (groupsResult.error || membersResult.error) return res.status(500).json({ success: false, message: "Unable to load assigned student groups." });
-    const memberIds = [...new Set(membersResult.data.map((member) => Number(member.user_id)))];
+    const memberIds = [...new Set([...membersResult.data.map((member) => Number(member.user_id)), ...groupsResult.data.map(group => Number(group.owner_id)).filter(Boolean)])];
     const usersResult = memberIds.length
         ? await supabase.from("users").select("user_id,name").in("user_id", memberIds)
         : { data: [], error: null };
@@ -554,6 +571,11 @@ app.get("/api/adviser/groups", getUser, async (req, res) => {
             ...groupDto(group),
             MemberCount: ids.length,
             MemberNames: ids.map((id) => names.get(id)).filter(Boolean).join("|"),
+            Members: ids.map((id) => ({
+                UserID: id,
+                Name: names.get(id) || "Student",
+                IsLeader: id === Number(group.owner_id),
+            })),
         };
     }));
 });
@@ -629,6 +651,9 @@ app.get("/api/groups", getUser, async (req, res) => {
     res.json(rows);
 });
 
+app.post("/api/groups/recommendations", getUser, requireStudent,
+    createRecommendationHandler({ supabase, callAIService }));
+
 app.post("/api/groups/:id/join", getUser, requireStudent, async (req, res) => {
     const groupId = Number(req.params.id);
     if (!Number.isInteger(groupId)) return res.status(400).json({ success: false, message: "A valid group is required." });
@@ -675,7 +700,7 @@ app.get("/api/my-group", getUser, async (req, res) => {
     if (usersResult.error) return res.status(500).json({ success: false, message: "Unable to load your group." });
     const users = new Map(usersResult.data.map((user) => [Number(user.user_id), user]));
     res.json({ group: {
-        ...groupDto(group), MembershipStatus: pendingIds.has(Number(group.group_id)) && !memberships.has(Number(group.group_id)) ? "Pending" : "Member",
+        ...groupDto(group), MembershipStatus: Number(group.owner_id) !== Number(userId) && pendingIds.has(Number(group.group_id)) && !memberships.has(Number(group.group_id)) ? "Pending" : "Member",
         members: membersResult.data.map((row) => { const user = users.get(Number(row.user_id)); return { UserID: Number(row.user_id), Name: user?.name, Role: user?.role }; }),
         pending: pendingResult.data.map((row) => { const user = users.get(Number(row.user_id)); return { RequestID: Number(row.request_id), UserID: Number(row.user_id), Name: user?.name, Username: user?.username, UserCode: user?.user_code, ExpiresAt: row.expires_at }; }),
     } });
@@ -732,36 +757,39 @@ app.post("/api/groups/:id/finalize", getUser, requireStudent, async (req, res) =
 app.get("/api/groups/:id/adviser-application", getUser, requireStudent, async (req, res) => {
     const groupId = Number(req.params.id);
     if (!Number.isSafeInteger(groupId) || groupId <= 0) return res.status(400).json({ success: false, message: "A valid group is required." });
-    const [groupResult, membershipResult] = await Promise.all([
-        supabase.from("groups").select("owner_id").eq("group_id", groupId).maybeSingle(),
-        supabase.from("group_members").select("user_id").eq("group_id", groupId).eq("user_id", req.user.user_id).maybeSingle(),
-    ]);
-    if (groupResult.error || membershipResult.error) {
-        console.error("Unable to verify adviser application access.", groupResult.error || membershipResult.error);
-        return res.status(500).json({ success: false, message: "Unable to verify group access." });
-    }
-    if (!groupResult.data) return res.status(404).json({ success: false, message: "Group not found." });
-    if (Number(groupResult.data.owner_id) !== Number(req.user.user_id) && !membershipResult.data) {
-        return res.status(403).json({ success: false, message: "Only group members can view this application." });
-    }
-    const { data: application, error } = await supabase.from("group_adviser_applications")
-        .select("application_id,adviser_id,status").eq("group_id", groupId).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    if (error) {
-        if (error.code === "42P01" || error.code === "PGRST205") {
-            console.error("Adviser application status lookup requires migration 002_group_adviser_applications.sql.", error);
-            return res.status(503).json({ success: false, message: "Adviser application status is temporarily unavailable." });
-        }
-        console.error("Unable to load adviser application status.", error);
-        return res.status(500).json({ success: false, message: "Unable to load adviser application status." });
-    }
-    if (!application) return res.json({ application: null });
-    const { data: adviser, error: adviserError } = await supabase.from("users")
-        .select("name").eq("user_id", application.adviser_id).maybeSingle();
-    if (adviserError) {
-        console.error("Unable to load adviser application details.", adviserError);
-        return res.status(500).json({ success: false, message: "Unable to load adviser application details." });
-    }
-    res.json({ application: { ApplicationID: Number(application.application_id), AdviserID: Number(application.adviser_id), AdviserName: adviser?.name || "", Status: application.status } });
+    const { data, error } = await supabase.rpc("get_group_adviser_application", { p_group_id: groupId, p_user_id: req.user.user_id });
+    if (error) return adviserWorkflowError(res, error);
+    res.set("Cache-Control", "private, no-store").json(data);
+});
+app.get("/api/adviser-applications/:id", getUser, requireStudent, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ success: false, message: "A valid application is required." });
+    const { data, error } = await supabase.rpc("get_adviser_application", { p_application_id: id, p_user_id: req.user.user_id });
+    if (error) return adviserWorkflowError(res, error);
+    res.set("Cache-Control", "private, no-store").json({ application: data });
+});
+
+app.get("/api/notifications", getUser, async (req, res) => {
+    const before = req.query.before === undefined ? null : Number(req.query.before);
+    if (before !== null && (!Number.isSafeInteger(before) || before <= 0)) return res.status(400).json({ success: false, message: "Invalid notification cursor." });
+    const expiry = await supabase.rpc("expire_group_adviser_applications");
+    // Inbox reads remain useful if scheduled expiry maintenance temporarily fails.
+    if (expiry.error) console.warn("Notification expiry maintenance failed.", { code: expiry.error.code || "network" });
+    const { data, error } = await supabase.rpc("get_user_notifications", { p_recipient_id: req.user.user_id, p_before_id: before });
+    if (error) return adviserWorkflowError(res, error);
+    res.set("Cache-Control", "private, no-store").json(data);
+});
+app.patch("/api/notifications/read-all", getUser, async (req, res) => {
+    const { data, error } = await supabase.rpc("mark_user_notification_read", { p_recipient_id: req.user.user_id, p_notification_id: null });
+    if (error) return adviserWorkflowError(res, error);
+    res.set("Cache-Control", "private, no-store").json(data);
+});
+app.patch("/api/notifications/:id/read", getUser, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ success: false, message: "A valid notification is required." });
+    const { data, error } = await supabase.rpc("mark_user_notification_read", { p_recipient_id: req.user.user_id, p_notification_id: id });
+    if (error) return adviserWorkflowError(res, error);
+    res.set("Cache-Control", "private, no-store").json(data);
 });
 
 app.post("/api/groups/:id/adviser-applications", getUser, requireStudent, async (req, res) => {
@@ -770,58 +798,155 @@ app.post("/api/groups/:id/adviser-applications", getUser, requireStudent, async 
     if (!Number.isSafeInteger(groupId) || groupId <= 0 || !Number.isSafeInteger(adviserId) || adviserId <= 0) {
         return res.status(400).json({ success: false, message: "A valid group and adviser are required." });
     }
-    const { data, error } = await supabase.rpc("submit_group_adviser_application", {
-        p_group_id: groupId, p_applicant_id: req.user.user_id, p_adviser_id: adviserId,
-    });
-    if (error) {
-        if (error.code === "PGRST202") return res.status(503).json({ success: false, message: "Adviser applications are not configured. Apply the 002_group_adviser_applications.sql migration." });
-        const message = error.message || "";
-        const conflict = message.includes("already has an active") || message.includes("unavailable") || message.includes("finalized") || message.includes("eligible") || message.includes("course");
-        const status = message.includes("Only the group leader") ? 403 : message.includes("not found") ? 404 : conflict ? 409 : 500;
-        return res.status(status).json({ success: false, message: message.includes("already has an active") ? "This group already has an active adviser application." : message });
+    // Reject mismatches before uploading files. The RPC repeats this check under row locks.
+    if (!await checkApplicationCourses(res, groupId, adviserId)) return;
+    let files;
+    try { files = parseApplicationFiles(req.body, hasExpectedPortfolioSignature); }
+    catch (error) { return res.status(error.status || 400).json({ success: false, message: error.message }); }
+    const stagedPaths = [];
+    const cleanup = async () => {
+        if (!stagedPaths.length) return;
+        const { error } = await supabase.storage.from(PORTFOLIO_BUCKET).remove(stagedPaths);
+        if (error) console.error("Application file cleanup failed:", error);
+    };
+    const documents = [];
+    try {
+        for (const file of files) {
+            const storagePath = 'application-requirements/' + req.user.user_id + '/' + crypto.randomUUID() + '.' + file.extension;
+            stagedPaths.push(storagePath);
+            const { error } = await supabase.storage.from(PORTFOLIO_BUCKET).upload(storagePath, file.fileBuffer, { contentType: file.mimeType, upsert: false });
+            if (error) throw error;
+            documents.push({ file_name: file.fileName, storage_path: storagePath, file_type: file.mimeType, file_size: file.fileBuffer.length });
+        }
+    } catch (error) {
+        console.error("Application file upload failed:", error);
+        await cleanup();
+        return res.status(502).json({ success: false, message: "Unable to upload application files. Please try again." });
     }
+    const args = { p_group_id: groupId, p_applicant_id: req.user.user_id, p_adviser_id: adviserId };
+    if (documents.length) args.p_documents = documents;
+    const { data, error } = await supabase.rpc(documents.length ? "submit_group_adviser_application_with_documents" : "submit_group_adviser_application", args);
+    if (error) { await cleanup(); return adviserWorkflowError(res, error); }
+    const saved = documents.length ? await supabase.from("group_adviser_application_documents")
+        .select("document_id,file_name,file_type,file_size,created_at").eq("application_id", Number(data)).order("document_id") : { data: [], error: null };
+    if (saved.error) console.error("Saved application file lookup failed:", saved.error);
+    // The application is committed: a failed follow-up lookup must not invent an empty list
+    // or return a retryable submission failure that could encourage a duplicate upload.
+    const requirements = saved.error ? undefined : (saved.data || []).map(applicationDocumentDto);
     const { data: adviser, error: adviserError } = await supabase.from("users").select("name").eq("user_id", adviserId).maybeSingle();
-    if (adviserError) return res.status(500).json({ success: false, message: "Application was saved, but adviser details could not be loaded." });
-    res.status(201).json({ success: true, application: { ApplicationID: Number(data), AdviserID: adviserId, AdviserName: adviser?.name || "", Status: "Pending" } });
+    if (adviserError) console.error("Saved application adviser name lookup failed:", adviserError);
+    const details = await supabase.rpc("adviser_application_json", { p_application_id: Number(data) });
+    res.status(201).json({ success: true, application: { ApplicationID: Number(data), AdviserID: adviserId, AdviserName: adviser?.name || "", Status: "Pending", ...(details.data || {}), Requirements: requirements, ...(requirements ? { Requirement: requirements[0] || null } : {}) } });
 });
 
 app.get("/api/adviser/applications", getUser, async (req, res) => {
     if (req.effectiveRole !== "adviser") return res.status(403).json({ success: false, message: "Only advisers can view adviser applications." });
-    const { data: applications, error } = await supabase.from("group_adviser_applications")
-        .select("application_id,group_id,applicant_id,status,created_at").eq("adviser_id", req.user.user_id).eq("status", "Pending").order("created_at");
-    if (error) return res.status(error.code === "42P01" || error.code === "PGRST205" ? 503 : 500).json({
-        success: false,
-        message: error.code === "42P01" || error.code === "PGRST205"
-            ? "Adviser applications are not configured. Apply the 002_group_adviser_applications.sql migration."
-            : "Unable to load adviser applications.",
-    });
+    const expiry = await supabase.rpc("expire_group_adviser_applications");
+    if (expiry.error) return adviserWorkflowError(res, expiry.error);
+    const { data: applications, error } = await supabase.from("pending_adviser_applications")
+        .select("application_id,group_id,applicant_id,status,created_at,expires_at").eq("adviser_id", req.user.user_id).eq("status", "Pending").order("created_at");
+    if (error) return adviserWorkflowError(res, error);
     if (!applications.length) return res.json([]);
     const groupIds = [...new Set(applications.map((item) => Number(item.group_id)))];
     const userIds = [...new Set(applications.map((item) => Number(item.applicant_id)))];
-    const [groupsResult, membersResult, usersResult] = await Promise.all([
-        supabase.from("groups").select("group_id,group_name,course").in("group_id", groupIds),
+    const [groupsResult, membersResult, usersResult, documentsResult] = await Promise.all([
+        supabase.from("groups").select("group_id,group_name,course,owner_id").in("group_id", groupIds),
         supabase.from("group_members").select("group_id,user_id").in("group_id", groupIds),
         supabase.from("users").select("user_id,name").in("user_id", userIds),
+        supabase.from("group_adviser_application_documents")
+            .select("document_id,application_id,file_name,file_type,file_size,created_at")
+            .in("application_id", applications.map((application) => Number(application.application_id))).order("document_id"),
     ]);
-    if (groupsResult.error || membersResult.error || usersResult.error) return res.status(500).json({ success: false, message: "Unable to load adviser application details." });
+    const documentsMigrationMissing = documentsResult.error?.code === "42P01" || documentsResult.error?.code === "PGRST205";
+    if (groupsResult.error || membersResult.error || usersResult.error || documentsResult.error) {
+        const migrationMissing = documentsMigrationMissing || [groupsResult.error, membersResult.error, usersResult.error]
+            .some((error) => error?.code === "42P01" || error?.code === "PGRST205");
+        return res.status(migrationMissing ? 503 : 500).json({
+            success: false,
+            message: migrationMissing
+                ? "Adviser application details are not configured. Apply the required database migrations."
+                : "Unable to load adviser application details.",
+        });
+    }
     const groupsById = new Map(groupsResult.data.map((group) => [Number(group.group_id), group]));
     const namesById = new Map(usersResult.data.map((user) => [Number(user.user_id), user.name]));
-    const memberIds = [...new Set(membersResult.data.map((member) => Number(member.user_id)))];
+    const memberIds = [...new Set([...membersResult.data.map((member) => Number(member.user_id)), ...groupsResult.data.map(group => Number(group.owner_id))])];
     const membersResultWithNames = memberIds.length
         ? await supabase.from("users").select("user_id,name").in("user_id", memberIds)
         : { data: [], error: null };
     if (membersResultWithNames.error) return res.status(500).json({ success: false, message: "Unable to load application group members." });
     const memberNames = new Map(membersResultWithNames.data.map((member) => [Number(member.user_id), member.name]));
+    const documentsByApplication = new Map();
+    for (const document of documentsResult.data) {
+        const id = Number(document.application_id);
+        documentsByApplication.set(id, [...(documentsByApplication.get(id) || []), applicationDocumentDto(document)]);
+    }
     res.json(applications.map((application) => ({
         ApplicationID: Number(application.application_id),
         GroupID: Number(application.group_id),
         GroupName: groupsById.get(Number(application.group_id))?.group_name || "Group",
         Course: groupsById.get(Number(application.group_id))?.course || "",
         Applicant: namesById.get(Number(application.applicant_id)) || "Group leader",
-        Members: membersResult.data.filter((member) => Number(member.group_id) === Number(application.group_id))
-            .map((member) => memberNames.get(Number(member.user_id))).filter(Boolean),
+        Members: [...new Set([groupsById.get(Number(application.group_id))?.owner_id,
+            ...membersResult.data.filter((member) => Number(member.group_id) === Number(application.group_id)).map(member => member.user_id)])]
+            .map(id => memberNames.get(Number(id))).filter(Boolean),
+        MemberCount: new Set([groupsById.get(Number(application.group_id))?.owner_id,
+            ...membersResult.data.filter(member => Number(member.group_id) === Number(application.group_id)).map(member => member.user_id)]).size,
+        Status: application.status,
         CreatedAt: application.created_at,
+        ExpiresAt: application.expires_at,
+        Requirements: documentsByApplication.get(Number(application.application_id)) || [],
+        Requirement: documentsByApplication.get(Number(application.application_id))?.[0] || null,
     })));
+});
+
+app.get("/api/adviser/applications/:id", getUser, async (req, res) => {
+    if (req.effectiveRole !== "adviser") return res.status(403).json({ success: false, message: "Only advisers can view adviser applications." });
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ success: false, message: "A valid application is required." });
+    const { data, error } = await supabase.rpc("get_adviser_application_review", { p_application_id: id, p_adviser_id: req.user.user_id });
+    if (error) return adviserWorkflowError(res, error);
+    res.set("Cache-Control", "private, no-store").json({ application: data });
+});
+
+app.get("/api/adviser/applications/:id/requirements/:documentId", getUser, async (req, res) => {
+    if (req.effectiveRole !== "adviser") return res.status(403).json({ success: false, message: "Only advisers can access application requirements." });
+    const applicationId = Number(req.params.id);
+    const documentId = Number(req.params.documentId);
+    if (!Number.isSafeInteger(applicationId) || applicationId <= 0 || !Number.isSafeInteger(documentId) || documentId <= 0) {
+        return res.status(400).json({ success: false, message: "A valid application document is required." });
+    }
+    const { data: document, error: documentError } = await supabase.from("group_adviser_application_documents")
+        .select("application_id,adviser_id,file_name,file_type,storage_path")
+        .eq("document_id", documentId).eq("application_id", applicationId).maybeSingle();
+    if (documentError) return res.status(500).json({ success: false, message: "Unable to load the application requirement." });
+    if (!document) return res.status(404).json({ success: false, message: "Application requirement not found." });
+    if (Number(document.adviser_id) !== Number(req.user.user_id)) {
+        return res.status(403).json({ success: false, message: "You cannot access this application requirement." });
+    }
+    res.set("Cache-Control", "private, no-store");
+    const bucket = supabase.storage.from(PORTFOLIO_BUCKET);
+    const [view, download] = await Promise.all([
+        bucket.createSignedUrl(document.storage_path, 300),
+        bucket.createSignedUrl(document.storage_path, 300, { download: document.file_name }),
+    ]);
+    if (view.error || download.error) return res.status(500).json({ success: false, message: "Unable to open this application file." });
+    let text;
+    let previewError;
+    if (req.query.preview === "text" && document.file_type !== "application/pdf") {
+        try {
+            const result = await bucket.download(document.storage_path);
+            if (result.error) throw result.error;
+            const buffer = Buffer.from(await result.data.arrayBuffer());
+            const WordExtractor = require("word-extractor");
+            const extracted = await new WordExtractor().extract(buffer);
+            text = extracted.getBody().slice(0, 500000);
+        } catch (error) {
+            console.error("Word application preview failed:", error);
+            previewError = "This file could not be previewed. Download it to open the original document.";
+        }
+    }
+    res.json({ url: view.data.signedUrl, downloadUrl: download.data.signedUrl, text, previewError });
 });
 
 app.post("/api/adviser/applications/:id/respond", getUser, async (req, res) => {
@@ -831,15 +956,20 @@ app.post("/api/adviser/applications/:id/respond", getUser, async (req, res) => {
     if (!Number.isSafeInteger(applicationId) || applicationId <= 0 || !["accept", "reject"].includes(action)) {
         return res.status(400).json({ success: false, message: "A valid application and response are required." });
     }
+    const { data: application, error: applicationError } = await supabase.from("group_adviser_applications")
+        .select("group_id,adviser_id,status").eq("application_id", applicationId).maybeSingle();
+    if (applicationError) return adviserWorkflowError(res, applicationError);
+    if (!application) return res.status(404).json({ success: false, message: "Adviser application not found." });
+    if (Number(application.adviser_id) !== Number(req.user.user_id)) return res.status(403).json({ success: false, message: "Only the selected adviser can respond to this application." });
+    const expiry = await supabase.rpc("expire_group_adviser_applications", { p_group_id: application.group_id });
+    if (expiry.error) return adviserWorkflowError(res, expiry.error);
+    if (application.status === "Expired" || (application.status === "Pending" && expiry.data > 0)) return res.status(409).json({ success: false, status: "Expired", message: "This adviser application has expired. The group can apply again." });
+    if (action === "accept" && application.status === "Pending" && !await checkApplicationCourses(res, application.group_id, req.user.user_id)) return;
     const { data, error } = await supabase.rpc("respond_to_group_adviser_application", {
         p_application_id: applicationId, p_adviser_id: req.user.user_id, p_accept: action === "accept",
     });
-    if (error) {
-        if (error.code === "PGRST202") return res.status(503).json({ success: false, message: "Adviser applications are not configured. Apply the 002_group_adviser_applications.sql migration." });
-        const message = error.message || "Unable to process this application.";
-        const status = message.includes("Only the selected adviser") ? 403 : message.includes("not found") ? 404 : message.includes("already been processed") || message.includes("unavailable") || message.includes("course") || message.includes("assigned") ? 409 : 500;
-        return res.status(status).json({ success: false, message });
-    }
+    if (error) return adviserWorkflowError(res, error);
+    if (data === "Expired") return res.status(409).json({ success: false, status: "Expired", message: "This adviser application has expired. The group can apply again." });
     res.json({ success: true, status: data });
 });
 
@@ -931,13 +1061,32 @@ app.get("/api/admin/summary", getUser, requireAdmin, async (_req, res) => {
     res.json({ users, activeUsers, students, advisers, groups, openGroups });
 });
 
-app.get("/api/admin/courses", getUser, requireAdmin, async (_req, res) => {
-    const [catalog, assigned] = await Promise.all([
-        supabase.from("courses").select("course_code").order("course_code"),
-        supabase.from("users").select("course").eq("role", "student").eq("is_active", true).not("course", "is", null).neq("course", "").neq("course", "Unspecified"),
+const validateAdminCourse = async (course) => {
+    const [courseRecord, assignedUsers, assignedGroups] = await Promise.all([
+        supabase.from("courses").select("course_code").eq("course_code", course).maybeSingle(),
+        supabase.from("users").select("user_id").in("role", ["student", "adviser"]).eq("course", course).limit(1),
+        supabase.from("groups").select("group_id").eq("course", course).limit(1),
     ]);
-    if (catalog.error || assigned.error) return res.status(500).json({ success: false, message: "Unable to load courses." });
-    res.json([...new Set([...catalog.data.map((row) => row.course_code), ...assigned.data.map((row) => row.course)])].sort());
+    if (courseRecord.error || assignedUsers.error || assignedGroups.error) return { valid: false, error: true };
+    return {
+        valid: Boolean(courseRecord.data || assignedUsers.data.length || assignedGroups.data.length),
+        error: false,
+    };
+};
+
+app.get("/api/admin/courses", getUser, requireAdmin, async (_req, res) => {
+    const [catalog, assignedUsers, assignedGroups] = await Promise.all([
+        supabase.from("courses").select("course_code").order("course_code"),
+        supabase.from("users").select("course").in("role", ["student", "adviser"]).not("course", "is", null).neq("course", "").neq("course", "Unspecified"),
+        supabase.from("groups").select("course").not("course", "is", null).neq("course", ""),
+    ]);
+    if (catalog.error || assignedUsers.error || assignedGroups.error) return res.status(500).json({ success: false, message: "Unable to load courses." });
+    const courses = [
+        ...catalog.data.map((row) => row.course_code),
+        ...assignedUsers.data.map((row) => row.course),
+        ...assignedGroups.data.map((row) => row.course),
+    ];
+    res.json([...new Set(courses.map((course) => String(course).trim()).filter(Boolean))].sort());
 });
 
 app.get("/api/admin/advisers", getUser, requireAdmin, async (_req, res) => {
@@ -951,8 +1100,16 @@ app.get("/api/admin/users", getUser, requireAdmin, async (req, res) => {
     const pageSize = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 10, 1), 10);
     const offset = (page - 1) * pageSize;
     const role = ["student", "adviser"].includes(req.query.role) ? req.query.role : null;
+    const course = typeof req.query.course === "string" ? req.query.course.trim() : "";
+    if (req.query.course !== undefined && !course) return res.status(400).json({ success: false, message: "Course is invalid." });
+    if (course) {
+        const validation = await validateAdminCourse(course);
+        if (validation.error) return res.status(500).json({ success: false, message: "Unable to validate course filter." });
+        if (!validation.valid) return res.status(400).json({ success: false, message: "Course is invalid." });
+    }
     let query = supabase.from("users").select("*", { count: "exact" }).order("created_at", { ascending: false }).order("user_id", { ascending: false });
     if (role) query = query.eq("role", role);
+    if (course) query = query.eq("course", course);
     const { data, count, error } = await query.range(offset, offset + pageSize - 1);
     if (error) return res.status(500).json({ success: false, message: "Unable to load users." });
     const total = count || 0;
@@ -1018,6 +1175,13 @@ app.post("/api/admin/users", getUser, requireAdmin, async (req, res) => {
         return res.status(400).json({ success: false, message: "Expiration must be a valid future date and time." });
     }
 
+    let accountCourse = null;
+    if (normalizedRole === "adviser" || (normalizedRole === "student" && course)) {
+        const result = await resolveAccountCourse(course);
+        if (result.error) return res.status(500).json({ success: false, message: "Unable to validate the account course." });
+        if (!result.course) return res.status(400).json({ success: false, message: "Select a configured course for this account." });
+        accountCourse = result.course;
+    }
     const duplicateCheck = await supabase.from("users").select("user_id").or(`user_code.eq.${trimmedUserCode},username.eq.${finalUsername}`);
     if (duplicateCheck.error) return res.status(500).json({ success: false, message: "Unable to validate the user details." });
     if (duplicateCheck.data?.length) return res.status(409).json({ success: false, message: "Username or User ID already exists." });
@@ -1033,8 +1197,8 @@ app.post("/api/admin/users", getUser, requireAdmin, async (req, res) => {
         first_name: normalizedFirstName, last_name: normalizedLastName,
         name: `${normalizedFirstName} ${normalizedLastName}`.trim(), role: normalizedRole,
         expires_at: normalizedExpiresAt?.toISOString() || null,
+        ...(["student", "adviser"].includes(normalizedRole) ? { course: accountCourse || "Unspecified" } : {}),
         ...(normalizedRole === "student" ? {
-            course: String(course || "Unspecified").trim() || "Unspecified",
             year_level: String(yearLevel || "").trim(),
             specialty: String(specialty || "").trim(),
             skills: Array.isArray(skills) ? skills.map(String) : [],
@@ -1053,7 +1217,7 @@ app.delete("/api/admin/users/:id", getUser, requireAdmin, async (req, res) => {
 });
 
 app.patch("/api/admin/users/:id", getUser, requireAdmin, async (req, res) => {
-    const { username, userCode, role, password, firstName, lastName, expiresAt } = req.body;
+    const { username, userCode, role, password, firstName, lastName, expiresAt, adviserCapacity } = req.body;
     const normalizedRole = ["student", "adviser", "admin", "library"].includes(role) ? role : null;
     if (!normalizedRole) return res.status(400).json({ success: false, message: "Username, ID, and role are required." });
 
@@ -1077,6 +1241,20 @@ app.patch("/api/admin/users/:id", getUser, requireAdmin, async (req, res) => {
         first_name: normalizedFirstName, last_name: normalizedLastName,
         name: `${normalizedFirstName || finalUsername} ${normalizedLastName}`.trim() || finalUsername,
     };
+    if (["student", "adviser"].includes(normalizedRole) && Object.prototype.hasOwnProperty.call(req.body, "course")) {
+        const result = await resolveAccountCourse(req.body.course);
+        if (result.error) return res.status(500).json({ success: false, message: "Unable to validate the account course." });
+        if (!result.course) return res.status(400).json({ success: false, message: "Select a configured course for this account." });
+        updates.course = result.course;
+    }
+    if (normalizedRole === "adviser" && Object.prototype.hasOwnProperty.call(req.body, "adviserCapacity")) {
+        const capacityText = String(adviserCapacity);
+        const capacity = Number(capacityText);
+        if (!/^\d+$/.test(capacityText) || !Number.isSafeInteger(capacity) || capacity < 0 || capacity > 2147483647) {
+            return res.status(400).json({ success: false, message: "Adviser slot capacity must be a non-negative whole number." });
+        }
+        updates.adviser_capacity = capacity;
+    }
     if (Object.prototype.hasOwnProperty.call(req.body, "expiresAt")) {
         const parsedExpiration = expiresAt ? new Date(expiresAt) : null;
         if (expiresAt && (Number.isNaN(parsedExpiration.getTime()) || parsedExpiration <= new Date())) {
@@ -1109,9 +1287,18 @@ app.patch("/api/admin/users/:id/status", getUser, requireAdmin, async (req, res)
     res.json({ success: true });
 });
 
-app.get("/api/admin/groups", getUser, requireAdmin, async (_req, res) => {
+app.get("/api/admin/groups", getUser, requireAdmin, async (req, res) => {
+    const course = typeof req.query.course === "string" ? req.query.course.trim() : "";
+    if (req.query.course !== undefined && !course) return res.status(400).json({ success: false, message: "Course is invalid." });
+    if (course) {
+        const validation = await validateAdminCourse(course);
+        if (validation.error) return res.status(500).json({ success: false, message: "Unable to validate course filter." });
+        if (!validation.valid) return res.status(400).json({ success: false, message: "Course is invalid." });
+    }
+    let groupsQuery = supabase.from("groups").select("group_id,group_name,course,status,max_members,finalized_at").order("group_name");
+    if (course) groupsQuery = groupsQuery.eq("course", course);
     const [groupsResult, membersResult] = await Promise.all([
-        supabase.from("groups").select("group_id,group_name,course,status,max_members,finalized_at").order("group_name"),
+        groupsQuery,
         supabase.from("group_members").select("group_id"),
     ]);
     if (groupsResult.error || membersResult.error) return res.status(500).json({ success: false, message: "Unable to load groups." });
@@ -1194,8 +1381,14 @@ app.post("/api/admin/groups/:id/members", getUser, requireAdmin, async (req, res
 });
 
 app.delete("/api/admin/groups/:id", getUser, requireAdmin, async (req, res) => {
-    const { error } = await supabase.from("groups").delete().eq("group_id", Number(req.params.id));
-    if (error) return res.status(500).json({ success: false, message: "Unable to delete group." });
+    const groupId = Number(req.params.id);
+    if (!Number.isSafeInteger(groupId) || groupId <= 0) return res.status(400).json({ success: false, message: "A valid group is required." });
+    const { error } = await supabase.rpc("admin_delete_group", { p_group_id: groupId, p_admin_id: req.user.user_id });
+    if (error?.code === "PGRST202") return res.status(503).json({ success: false, message: "Group deletion needs an administrator update. Apply migration 009 before retrying." });
+    if (error) return rpcError(res, error, {
+        "Group not found": { status: 404, message: "Group not found." },
+        "Admin access is required": { status: 403, message: "Admin access is required." },
+    });
     res.json({ success: true });
 });
 

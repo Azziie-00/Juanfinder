@@ -114,6 +114,7 @@ export default function Finder() {
   // ── Join group ──
   const openRoleModal = (g: GroupData) => {
     const skills = g.specialty ? g.specialty.split('/').map(s => s.trim()) : ['Developer'];
+    setDetailGroup(null);
     setRoleModal({ open:true, group:g, skills });
     setSelectedRole(null);
   };

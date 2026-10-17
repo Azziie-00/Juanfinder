@@ -1,0 +1,149 @@
+.adviser-groups-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 28px;
+  background: var(--bg-page);
+}
+.adviser-groups-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.adviser-groups-header h1 { margin: 3px 0 4px; color: var(--navy); font-size: 30px; font-weight: 900; }
+.adviser-groups-header p { margin: 0; color: rgba(26,42,74,.62); font-size: 14px; }
+.adviser-groups-header-actions { display: flex; align-items: center; gap: 10px; }
+.adviser-pending-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 14px;
+  background: var(--navy);
+  color: var(--amber);
+  font-weight: 800;
+}
+.adviser-pending-button:hover { background: var(--navy-mid); color: #fff; }
+.adviser-pending-count {
+  display: inline-flex;
+  min-width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--amber);
+  color: var(--navy);
+  font-size: 11px;
+}
+.adviser-groups-card {
+  display: flex;
+  min-height: 250px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(26,42,74,.12);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 4px 18px rgba(26,42,74,.07);
+}
+.adviser-groups-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(26,42,74,.1);
+}
+.adviser-groups-card-header h2 { margin: 0; color: var(--navy); font-size: 18px; font-weight: 850; }
+.adviser-groups-card-header p { margin: 4px 0 0; color: rgba(26,42,74,.58); font-size: 12px; }
+.adviser-group-total { color: var(--navy-light); font-size: 12px; font-weight: 800; white-space: nowrap; }
+.adviser-groups-state {
+  display: flex;
+  min-height: 160px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  color: rgba(26,42,74,.62);
+  text-align: center;
+}
+.adviser-groups-table-wrap { max-height: calc(100vh - 300px); overflow: auto; }
+.adviser-groups-table { width: 100%; border-collapse: collapse; color: var(--navy); font-size: 13px; }
+.adviser-groups-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 12px 16px;
+  background: #eef3fb;
+  color: rgba(26,42,74,.65);
+  text-align: left;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: .6px;
+}
+.adviser-groups-table td { padding: 14px 16px; border-top: 1px solid rgba(26,42,74,.1); vertical-align: top; }
+.adviser-groups-table td strong { font-weight: 800; }
+.adviser-group-member-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.adviser-group-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 20px;
+  padding: 5px 9px;
+  background: #eef3fb;
+  color: var(--navy);
+  font-size: 11px;
+  font-weight: 650;
+}
+.adviser-group-member small { color: #8a6500; font-size: 9px; font-weight: 850; text-transform: uppercase; }
+.adviser-group-status { border-radius: 20px; padding: 4px 9px; background: #def6e8; color: #1a7a3a; font-size: 10px; font-weight: 850; text-transform: uppercase; }
+.adviser-pending-modal .modal-content { max-height: calc(100vh - 40px); }
+.adviser-pending-modal .modal-header { flex-direction: row; align-items: center; justify-content: space-between; }
+.adviser-pending-card { padding: 16px 0; border-bottom: 1px solid rgba(255,255,255,.12); }
+.adviser-pending-card:first-child { padding-top: 0; }
+.adviser-pending-card:last-child { border-bottom: 0; }
+.adviser-pending-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.adviser-pending-card-heading h3 { margin: 0 0 4px; color: #fff; font-size: 16px; font-weight: 800; }
+.adviser-pending-card-heading span,.adviser-no-requirement { color: rgba(255,255,255,.58); font-size: 12px; }
+.adviser-pending-details { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; margin: 14px 0; }
+.adviser-pending-details div { min-width: 0; }
+.adviser-pending-details dt { margin-bottom: 4px; color: var(--amber); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.adviser-pending-details dd { margin: 0; color: rgba(255,255,255,.85); font-size: 12px; overflow-wrap: anywhere; }
+.adviser-pending-requirement { display: flex; flex-direction: column; gap: 8px; }
+.adviser-pending-requirement > strong { color: var(--amber); font-size: 11px; text-transform: uppercase; }
+.adviser-requirement-file { display: flex; align-items: center; gap: 10px; color: #fff; }
+.adviser-requirement-file > span { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.adviser-pending-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+.adviser-group-summary .adviser-table { table-layout: fixed; }
+.adviser-group-summary th, .adviser-group-summary td { overflow-wrap: anywhere; }
+
+/* Each real student has a row; the gap provides one blank line between members. */
+.student-member-table {
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0 1.5rem;
+}
+.student-member-table td { overflow-wrap: anywhere; background: #f5f7fb; border-top: 0; }
+.student-leader-label { display: block; margin-top: 4px; color: #8a6500; }
+
+@media (max-width: 768px) {
+  .adviser-groups-page { padding: 16px 12px 80px; }
+  .adviser-groups-header { align-items: flex-start; }
+  .adviser-groups-header h1 { font-size: 25px; }
+  .adviser-groups-card-header { padding: 14px; }
+  .adviser-groups-table { min-width: 680px; }
+  .student-member-table { min-width: 0; }
+  .student-members-page .adviser-groups-table-wrap { max-height: none; overflow: visible; }
+  .student-member-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .student-member-table, .student-member-table tbody { display: block; }
+  .student-member-table .student-member-row { display: grid; margin-bottom: 1.5rem; border-radius: 10px; overflow: hidden; }
+  .student-member-table td { display: block; padding: 8px 14px; }
+  .student-member-table td::before { content: attr(data-label); display: block; margin-bottom: 3px; font-size: 10px; font-weight: 800; text-transform: uppercase; color: var(--navy-light); }
+  .adviser-pending-details { grid-template-columns: 1fr; }
+  .adviser-requirement-file { align-items: flex-start; flex-wrap: wrap; }
+  .adviser-requirement-file > span { flex-basis: calc(100% - 30px); }
+}

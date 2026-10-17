@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, type ReactNode } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useState, useRef, useEffect, useSyncExternalStore, type ReactNode } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
-import { getInitials, NOTIFICATIONS } from '../data/datas';
+import { getInitials } from '../data/datas';
 import { API_BASE_URL } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
+import NotificationBell from './NotificationBell';
 
 const STUDENT_NAV_LINKS = [
   { to:'/',        icon:'ti-layout-dashboard', label:'Dashboard' },
@@ -27,18 +28,33 @@ const LIBRARY_NAV_LINKS = STUDENT_NAV_LINKS;
 
 const ROLE_LABEL: Record<string, string> = { student:'Student', adviser:'Adviser', admin:'Admin', superadmin:'Super Admin', library:'Library' };
 
+const mobileQuery = '(max-width: 768px)';
+const subscribeToViewport = (listener: () => void) => {
+  const media = window.matchMedia(mobileQuery);
+  media.addEventListener('change', listener);
+  return () => media.removeEventListener('change', listener);
+};
+const isMobileViewport = () => window.matchMedia(mobileQuery).matches;
+
 export default function Layout({ children, hideSidebar = false }: { children: ReactNode; hideSidebar?: boolean }) {
   const { user, viewRole, effectiveRole, switchViewRole, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isMobile = useSyncExternalStore(subscribeToViewport, isMobileViewport, () => false);
+  const assistantSelected = effectiveRole === 'student' && isMobile && location.pathname === '/'
+    && new URLSearchParams(location.search).get('view') === 'juan-ai';
   const [ddOpen, setDdOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
   const ddRef = useRef<HTMLDivElement>(null);
-  const notifRef = useRef<HTMLDivElement>(null);
 
   const initials  = getInitials(user?.name || 'JD');
   const roleLabel = ROLE_LABEL[effectiveRole || 'student'] || 'Student';
-  const navLinks  = effectiveRole === 'library' ? LIBRARY_NAV_LINKS : effectiveRole === 'admin' || effectiveRole === 'superadmin' ? ADMIN_NAV_LINKS : effectiveRole === 'adviser' ? ADVISER_NAV_LINKS : STUDENT_NAV_LINKS;
-  const unreadCount = NOTIFICATIONS.filter(n => !n.read).length;
+  const studentLinks = isMobile && effectiveRole === 'student'
+    ? [...STUDENT_NAV_LINKS, { to: '/?view=juan-ai', icon: 'ti-message-chatbot', label: 'JUAN-AI' }]
+    : STUDENT_NAV_LINKS;
+  const navLinks = effectiveRole === 'library' ? LIBRARY_NAV_LINKS
+    : effectiveRole === 'admin' || effectiveRole === 'superadmin' ? ADMIN_NAV_LINKS
+    : effectiveRole === 'adviser' ? ADVISER_NAV_LINKS
+    : studentLinks;
 
   const switchDemoRole = (role: string) => {
     switchViewRole(role === 'superadmin' ? null : role as 'student' | 'adviser' | 'admin' | 'library');
@@ -68,14 +84,13 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
   useEffect(() => {
     const h = (e: MouseEvent) => {
       if (ddRef.current && !ddRef.current.contains(e.target as Node)) setDdOpen(false);
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
   return (
-    <div className={`app${hideSidebar ? ' app-fullscreen' : ''}`}>
+    <div className={`app${hideSidebar ? ' app-fullscreen' : ''}${assistantSelected ? ' mobile-assistant-active' : ''}`}>
       {!hideSidebar && <aside className="sidebar">
         <div className="logo">
           <div className="logo-system">STI Education System</div>
@@ -83,8 +98,10 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
         </div>
         <nav className="sidebar-nav">
           {navLinks.map(({ to, icon, label }) => (
-            <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
-              <i className={`ti ${icon}`}></i> {label}
+            <NavLink key={to} to={to} end={to === '/'}
+              aria-current={to === '/' && assistantSelected ? false : to === '/?view=juan-ai' && !assistantSelected ? false : undefined}
+              className={({ isActive }) => `nav-item${(to === '/?view=juan-ai' ? assistantSelected : isActive && !(to === '/' && assistantSelected)) ? ' active' : ''}`}>
+              <i className={`ti ${icon}`} aria-hidden="true"></i> {label}
             </NavLink>
           ))}
         </nav>
@@ -114,32 +131,7 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
                 </select>
               </div>
             )}
-            <div ref={notifRef} style={{ position: 'relative' }}>
-              <i className="ti ti-bell fs-5" style={{ color:'rgba(255,255,255,.65)', cursor:'pointer' }} onClick={() => setNotifOpen(o => !o)}></i>
-              {unreadCount > 0 && <span className="notif-badge">{unreadCount}</span>}
-
-              {notifOpen && (
-                <div className="notif-dd">
-                  <div className="notif-dd-list">
-                    {NOTIFICATIONS.map(n => (
-                      <div key={n.id} className={`notif-dd-item${n.read ? '' : ' unread'}`}>
-                        <div className="notif-dd-avatar"><i className="ti ti-user"></i></div>
-                        <div className="notif-dd-body">
-                          <div className="notif-dd-name">{n.name}</div>
-                          <div className="notif-dd-action">{n.action}</div>
-                          <div className="notif-dd-time">{n.time}</div>
-                        </div>
-                        <i className="ti ti-check notif-dd-check"></i>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="notif-dd-footer">
-                    <span>See all</span>
-                    <span><i className="ti ti-settings"></i> Configure</span>
-                  </div>
-                </div>
-              )}
-            </div>
+            <NotificationBell key={`${user?.id}:${viewRole || user?.role}`} />
 
             <div ref={ddRef} style={{ position: 'relative' }} className="d-flex align-items-center gap-2">
               <div className="topbar-avatar">{initials}</div>

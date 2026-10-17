@@ -1,5 +1,7 @@
 # JuanFinder
 
+For an existing database with adviser application or slot problems, follow the [adviser workflow repair guide](server/ADVISER_WORKFLOW.md). It includes the confirmed diagnosis, read-only schema/permission checks, and the exact additive SQL order. Do not rerun the sample-account setup below as a repair.
+
 ## Supabase setup
 
 1. Create or select a Supabase project.
@@ -7,10 +9,14 @@
 3. In the same SQL Editor, run [`server/migrations/001_capstone_workflows.sql`](server/migrations/001_capstone_workflows.sql). This additive migration adds profiles, private portfolios, API sessions, temporary access, group finalization, expiring join requests, and audited admin membership overrides. Apply it after `database.sql`; do not rerun `database.sql` against a production database because it also creates sample accounts.
 4. Run [`server/migrations/002_group_adviser_applications.sql`](server/migrations/002_group_adviser_applications.sql) after migration 001 to enable persisted group adviser applications. This is additive and does not modify existing user, group, or membership records.
 5. Run [`server/migrations/003_unspecified_course_advisers.sql`](server/migrations/003_unspecified_course_advisers.sql) after migration 002 to keep active advisers whose course is blank or `Unspecified` available to students across courses.
-6. Run [`server/migrations/004_restore_all_adviser_availability.sql`](server/migrations/004_restore_all_adviser_availability.sql) after migration 003 to list active advisers from all courses and allow applications across courses while retaining the 10-group capacity limit.
-7. The first migration creates the private `student-portfolios` Storage bucket. Uploads and previews are mediated by the server using the service-role key; do not make the bucket public or expose that key to the browser. The migration attempts to schedule request/account expiration every five minutes with `pg_cron`. If that extension is unavailable, configure a Supabase scheduled database job to run `SELECT public.expire_juan_finder_records();` every five minutes.
-8. In Supabase Project Settings, copy the project URL and the server-side `service_role` key (or secret API key, if your project uses the newer key format). Keep the key private.
-9. Create `server/.env` from [`server/.env.example`](server/.env.example), then set the project URL and key:
+6. Run [`server/migrations/004_restore_all_adviser_availability.sql`](server/migrations/004_restore_all_adviser_availability.sql) after migration 003 to list active advisers from all courses and allow applications across courses while retaining the existing 10-group default capacity.
+7. Run [`server/migrations/005_adviser_slot_capacity.sql`](server/migrations/005_adviser_slot_capacity.sql) after migration 004. It adds a per-adviser slot capacity (default 10, including for existing advisers) and updates adviser application checks to enforce that configured capacity. Set an adviser's capacity in **Admin → Advisers → Edit User → Adviser Slot Capacity**. Use 0 to stop new applications.
+8. Run [`server/migrations/006_group_adviser_application_requirements.sql`](server/migrations/006_group_adviser_application_requirements.sql) after migration 005 to store metadata for optional group-application requirements files in the private `student-portfolios` bucket.
+
+   Then run [`server/migrations/007_atomic_adviser_assignments.sql`](server/migrations/007_atomic_adviser_assignments.sql) to persist group adviser assignments and enforce atomic acceptance and per-group capacity accounting. Run [`server/migrations/008_match_adviser_group_courses.sql`](server/migrations/008_match_adviser_group_courses.sql) to require matching configured courses for new applications and acceptance while preserving existing accepted assignments. Run [`server/migrations/009_delete_group_adviser_cleanup.sql`](server/migrations/009_delete_group_adviser_cleanup.sql) so admin group deletion also releases its members' adviser assignments. Then run [`server/migrations/010_application_multiple_files.sql`](server/migrations/010_application_multiple_files.sql) to allow up to five application files with a combined 10 MB limit. Finally apply [migration 011](server/migrations/011_notifications_and_application_expiry.sql) for persistent notifications and 24-hour application expiration; verify the scheduler using the [workflow guide](server/ADVISER_WORKFLOW.md). Apply [migration 012](server/migrations/012_adviser_submission_notifications.sql) for selected-adviser submission notifications and secure application/file details.
+9. The first migration creates the private `student-portfolios` Storage bucket. Uploads and previews are mediated by the server using the service-role key; do not make the bucket public or expose that key to the browser. The migration attempts to schedule request/account expiration every five minutes with `pg_cron`. If that extension is unavailable, configure a Supabase scheduled database job to run `SELECT public.expire_juan_finder_records();` every five minutes.
+10. In Supabase Project Settings, copy the project URL and the server-side `service_role` key (or secret API key, if your project uses the newer key format). Keep the key private.
+11. Create `server/.env` from [`server/.env.example`](server/.env.example), then set the project URL and key:
 
    ```env
    SUPABASE_URL=https://your-project-ref.supabase.co
@@ -21,7 +27,7 @@
 
    Use your actual Supabase project URL. Never put the service key in a `VITE_` variable, frontend code, or a committed file. `.env` files are ignored by Git. Preserve any existing values if you still need them to export data from SQL Server.
 
-10. Install and start the API:
+12. Install and start the API:
 
    ```powershell
    cd path\to\Juanfinder
@@ -29,7 +35,7 @@
    npm run server
    ```
 
-11. In a second terminal at the project root, start the frontend:
+13. In a second terminal at the project root, start the frontend:
 
    ```powershell
    npm run dev
@@ -49,7 +55,7 @@ The frontend and Express API are served from the same Vercel deployment. Set the
 
 Do not set `VITE_API_URL` in Vercel for this same-domain setup. Production API calls use `/api` on the Vercel domain; local development uses `http://localhost:5000`. Save the variables and redeploy so the serverless API receives them. Verify the deployed connection at `https://your-project.vercel.app/api/health/db`.
 
-Run `server/database.sql` and migrations 001, 002, 003, and 004 in order in the Supabase SQL Editor for the project used by both localhost and Vercel; the app does not run schema migrations automatically. Migration 002 applies the fixed 10-group adviser capacity check using existing group-membership and adviser-assignment records. Migration 004 restores the full adviser list across courses without changing the fixed 10-group limit. Configure the scheduled expiration job as described above if `pg_cron` was unavailable.
+For a new installation, run `server/database.sql` and migrations 001 through 012 in order in the Supabase SQL Editor for the project used by both localhost and Vercel; the app does not run schema migrations automatically. For an existing installation, use the [repair guide](server/ADVISER_WORKFLOW.md) and apply missing migrations without rerunning sample-account setup. Migration 005 adds configurable capacity, 006 adds application requirements, and 007 persists adviser assignments and enforces atomic acceptance. Configure the scheduled expiration job as described above if `pg_cron` was unavailable.
 
 Sample accounts created by the SQL script:
 
@@ -67,7 +73,27 @@ Follow [the AI service setup guide](ai-service/README.md). Before using the new 
 
 The AI panel appears on **My Group** for approved members. Each member can upload a PDF, DOCX, or TXT file (maximum 10 MB), analyze it, and save an extracted skills profile. Once profiles have been uploaded, the group can generate title options and save one selected title.
 
-This is a local-development prototype. Scanned PDFs are not supported in this first version, and adviser matching is not yet connected to the title-selection flow. Do not expose the Ollama port or AI service publicly. AI group endpoints require an authenticated session and verify group membership on the server.
+AI group endpoints require an authenticated session and verify group membership on the server. Dashboard adviser matching also uses the selected capstone title when one has been saved. Keep Ollama private and protect any remotely hosted AI service with the shared service token.
+
+## Recommended groups with Llama 3.2 1B
+
+Students without a group or pending join request can open **Dashboard → Recommended groups → Find my matches** to get up to three open group recommendations based on the skills saved in **Profile**. Each suggestion explains the fit, shows matching skills and available places, and offers a Request to join action in the Dashboard panel. Empty profiles link to Profile; unavailable AI and no-match results leave normal browsing available.
+
+1. Follow [the AI service setup guide](ai-service/README.md), then run `ollama pull llama3.2:1b` on the AI host.
+2. Copy `ai-service/.env.example` to `ai-service/.env` and replace `AI_SERVICE_TOKEN` with a long random secret. Set the **same** token in `server/.env`, along with `AI_SERVICE_URL` pointing to the AI service. Restart both services. All JuanFinder AI features use the fixed `llama3.2:1b` model, including recommendations, chat, CV analysis, and title generation. Model environment overrides are not used.
+3. Save skills in the student's Profile, then use the Dashboard recommendation panel. No new database migration is required beyond the existing profile/group migrations.
+
+`POST /api/groups/recommendations` requires the existing authenticated student session and takes no client-supplied student ID, skills, or candidates. The server loads profile skills and excludes full, finalized, closed, other-course groups and students with existing memberships, ownership, or unexpired pending requests. It shortlists up to 12 candidates by direct skill overlap; Llama ranks semantic fit and returns up to three matches. Only supplied group IDs and actual profile skills are accepted. Eligibility is checked again after inference, and joining still uses the existing transactional eligibility checks. Only skills, group IDs, specialties, and descriptions are sent to the AI service; names, contact details, and uploaded documents are not included.
+
+Group discovery is independent of the one-time capstone-title quota and does not consume or reset it. Recommendations are generated on demand and are not persisted. For Vercel, configure the shared token and a server-reachable authenticated HTTPS `AI_SERVICE_URL`; localhost cannot reach the AI running on a personal computer. Ensure the hosting request timeout supports the inference duration.
+
+Verification: `npm run build`, `npm run lint`, `node --test server/group-recommendations.test.js`, and (from `ai-service`) `python -m unittest test_group_recommendations.py`.
+
+## Recommended advisers with Llama 3.2 1B
+
+Students who belong to a group can select **Dashboard → Recommended adviser → Find my adviser**. The saved group title, description, and selected capstone title are matched against available same-course advisers' profile expertise. Cards explain the fit and link to the existing application process. Recommended Groups displays one group at a time in a 360px panel with Previous/Next navigation; Recommended Adviser stays 180px tall. Long content scrolls internally.
+
+Restart the AI and backend services after updating. See the [adviser recommendation guide](docs/adviser-recommendations.md) for eligibility, model limitations, deployment configuration and validation commands.
 
 ## Temporary access
 

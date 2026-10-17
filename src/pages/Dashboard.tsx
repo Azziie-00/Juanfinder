@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Row, Col, InputGroup, Form, Spinner } from 'react-bootstrap';
 import Layout from '../components/Layout';
 import Calendar from '../components/Calendar';
+import RecommendedGroups from '../components/RecommendedGroups';
+import RecommendedAdvisers from '../components/RecommendedAdvisers';
 import type { AuthUser, GroupData } from "../data/datas";
 import { useAuth } from '../context/useAuth';
 import { API_BASE_URL } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
-import { ADVISER, AI_CONFIG, ADVISERS } from '../data/datas';
+import { ADVISER, AI_CONFIG } from '../data/datas';
 import '../styles/dashboard.css';
 
 
@@ -115,12 +117,12 @@ async function callAI(
 }
 
 export default function Dashboard() {
+  const [searchParams] = useSearchParams();
+  const assistantView = searchParams.get('view') === 'juan-ai';
   const { user, viewRole } = useAuth();
-  const navigate = useNavigate();
   const firstName = (user?.name || 'Student').trim().split(' ')[0];
   const [groups, setGroups]           = useState<GroupData[]>([]);
   const [joined, setJoined]           = useState<string | null>(null);
-  const [groupError, setGroupError]   = useState('');
   const [chatHistory, setChatHistory] = useState<AIMessage[]>([]);
   const [messages, setMessages]       = useState<ChatMessage[]>([{ role:'ai', text:`Hi ${firstName}! I'm JUAN-AI. Tap any group to join and I'll recommend research titles for you!` }]);
   const [inputVal, setInputVal]       = useState('');
@@ -147,23 +149,14 @@ export default function Dashboard() {
     fetch(`${API_BASE_URL}/groups`, { headers: authHeaders(user, viewRole) })
       .then(async response => response.ok ? response.json() : [])
       .then((records: { GroupID: number; GroupName: string; Course: string; Specialty: string; Description: string; Status: string; MaxMembers: number; MemberCount: number; OwnerID: number; MemberNames: string; IsMember: number; IsPending: number; FinalizedAt?: string | null }[]) => {
-        setGroups(records.filter(record => record.Status === 'Open' && !record.IsMember && !record.IsPending).map(record => ({
-          id: String(record.GroupID), name: record.GroupName, course: record.Course,
-          specialty: record.Specialty, desc: record.Description, status: record.Status,
-          maxMembers: record.MaxMembers, members: record.MemberCount,
-          slots: Math.max(0, record.MaxMembers - record.MemberCount),
-          availability: `${Math.max(0, record.MaxMembers - record.MemberCount)} / ${record.MaxMembers}`,
-          ownerId: record.OwnerID, memberNames: record.MemberNames?.split('|').filter(Boolean) || [],
-          finalizedAt: record.FinalizedAt || null,
-        })));
-      });
+        const existing = records.find(record => record.IsMember || record.IsPending || record.OwnerID === Number(user.id));
+        setJoined(existing?.GroupName || null);
+      })
+      .catch(error => console.warn('Could not check group membership:', error));
   }, [user, viewRole]);
 
   useEffect(() => {
-    if (!user) {
-      setAiDisabled(false);
-      return;
-    }
+    if (!user) return;
     let active = true;
     fetch(`${API_BASE_URL}/ai/chat/status`, { headers: authHeaders(user, viewRole) })
       .then(async response => {
@@ -330,31 +323,33 @@ export default function Dashboard() {
   };
 
   const joinGroup = async (group: GroupData) => {
-    setGroupError('');
     const response = await fetch(`${API_BASE_URL}/groups/${group.id}/join`, { method: 'POST', headers: authHeaders(user, viewRole) });
     const data = await response.json();
     if (!response.ok) {
-      setGroupError(data.message || 'Unable to send the group request.');
-      return;
+      throw new Error(data.message || 'Unable to send the group request.');
     }
     setJoined(group.name);
-    setGroups(current => current.filter(item => item.id !== group.id));
+    setGroups([]);
     addBubble(`I requested to join "${group.name}"`, 'user');
+    if (aiDisabled) {
+      addBubble('Your join request is pending approval. You can check its status in My Group.', 'ai');
+      return;
+    }
     setAiLoading(true);
     const newHist: AIMessage[] = [...chatHistory, { role:'user', content:`Student requested to join "${group.name}". Let them know their request is pending approval in under 50 words.` }];
     try {
       const reply = await callAI(addCVContext(AI_CONFIG.systemPrompt, cvProfile, cvFilename), newHist, user, viewRole);
       setChatHistory([...newHist, { role:'assistant', content:reply }]);
       addBubble(reply, 'ai');
-    } catch { addBubble('Welcome to the group!', 'ai'); }
+    } catch { addBubble('Your join request is pending approval. You can check its status in My Group.', 'ai'); }
     setAiLoading(false);
     await fetchTitles(group.name);
   };
 
   return (
     <Layout>
-      <div className="dashboard-content">
-        <Row className="g-3" style={{ flexShrink:0 }}>
+      <div className={`dashboard-content${assistantView ? ' assistant-mobile-view' : ''}`}>
+        <Row className="g-3 dashboard-overview" style={{ flexShrink:0 }}>
           <Col xs={6} md={4}>
             <div className="stat-card h-100">
               <div className="stat-label"><i className="ti ti-users"></i> Finder</div>
@@ -371,58 +366,38 @@ export default function Dashboard() {
         </Row>
 
         <Row className="g-3 mt-0 dashboard-lower-row">
-          <Col xs={12} lg={8} className="d-flex flex-column gap-3">
+          <Col xs={12} lg={8} className="d-flex flex-column gap-3 dashboard-recommendations-column">
             <div className="announce-card">
               <div className="announce-head">
                 <div className="adviser-avatar"><i className="ti ti-user"></i></div>
-                <div className="announce-label">Adviser | {ADVISER.name}</div>
+                <div className="announce-title">Announcement</div>
               </div>
-              <div className="announce-body"><div className="announce-msg">{ADVISER.announcement}</div></div>
-            </div>
-            <div className="groups-card">
-              <div className="groups-title">Recommended groups <span className="ai-badge">AI-powered</span></div>
-              {groupError && <div role="alert" className="text-danger px-3">{groupError}</div>}
-              <div className="groups-scroll">
-                {groups.map(g => (
-                  <div key={g.id} className={`group-card${joined===g.name?' active':''}`}>
-                    <div className="group-card-name">{g.name}</div>
-                    <div className="group-card-desc">{g.desc}</div>
-                    <div className="group-card-footer">
-                      <span className={`group-card-slots${(g.slots??0)===0?' full':''}`}>
-                        {(g.slots??0)>0 ? `${g.slots} slot${g.slots!==1?'s':''} open` : 'Full'}
-                      </span>
-                      <button className="group-card-join" disabled={aiLoading || (g.slots ?? 0) === 0} onClick={() => void joinGroup(g)}>Request to join →</button>
-                    </div>
-                  </div>
-                ))}
-                {groups.length === 0 && <div className="px-3 py-4 text-muted">No open groups are available right now.</div>}
+              <div className="announce-body">
+                <div className="announce-content">{ADVISER.announcement}</div>
+                {ADVISER.name && <div className="announce-meta">
+                  <span className="announce-meta-label">Announced by:</span>
+                  <span className="announce-meta-value">{ADVISER.name}</span>
+                </div>}
+                {ADVISER.publishedAt && <div className="announce-date">Posted {ADVISER.publishedAt}</div>}
               </div>
             </div>
-            <div className="adviser-rec-card">
-              <div className="groups-title">Recommended adviser <span className="ai-badge">AI-powered</span></div>
-              <div className="adviser-rec-item">
-                <div className="adviser-rec-avatar"><i className="ti ti-user"></i></div>
-                <div className="adviser-rec-info">
-                  <div className="adviser-rec-name">{ADVISERS[0].name}</div>
-                  <div className="adviser-rec-bio">{ADVISERS[0].bio}</div>
-                </div>
-                <button className="adviser-rec-apply" onClick={() => navigate('/adviser')}>Apply →</button>
-              </div>
-            </div>
+            <RecommendedGroups key={`${user?.id}:${viewRole}`} unavailable={Boolean(joined)}
+              onMatchesChange={setGroups} onJoinGroup={joinGroup} />
+            <RecommendedAdvisers key={`advisers:${user?.id}:${viewRole}`} />
           </Col>
 
-          <Col xs={12} lg={4}>
-            <div className="ai-panel">
+          <Col xs={12} lg={4} className="dashboard-assistant-column">
+            <section className="ai-panel" aria-label="JUAN-AI assistant">
               <div className="ai-panel-title">JUAN-AI Assistant</div>
-              <div className="ai-recs">
+              {groups.length > 0 && !joined && <div className="ai-recs">
                 <div className="ai-recs-label">Group recommendations</div>
-                {[...groups].reverse().map(g => (
+                {groups.map(g => (
                   <div key={g.id} className="ai-rec-item" style={joined===g.name?{borderLeft:'3px solid #f59e0b'}:{}}>
-                    <div className="ai-rec-item-top"><span>{g.name}</span><span className="slots">{g.slots} open</span></div>
+                    <div className="ai-rec-item-top"><span>{g.name}</span><span className="slots">{g.maxMembers - g.members} open</span></div>
                     <div className="ai-rec-item-desc">{g.desc}</div>
                   </div>
                 ))}
-              </div>
+              </div>}
               {titlesGroup && (
                 <div className="title-rec-section">
                   <div className="title-rec-header">
@@ -489,13 +464,13 @@ export default function Dashboard() {
                     {cvBusy ? <Spinner size="sm" /> : <i className="ti ti-paperclip"></i>}
                   </button>
                   <Form.Control className="ai-input" placeholder={aiDisabled ? "AI access used — your 3 titles are saved" : "Ask about groups or titles…"} value={inputVal} onChange={e => setInputVal(e.target.value)} onKeyDown={e => e.key==='Enter' && sendMsg(inputVal)} disabled={aiDisabled || aiLoading || cvBusy} />
-                  <button className="ai-send" onClick={() => sendMsg(inputVal)} disabled={aiDisabled || aiLoading || cvBusy}>
+                  <button className="ai-send" aria-label="Send message" onClick={() => sendMsg(inputVal)} disabled={aiDisabled || aiLoading || cvBusy}>
                     {aiLoading ? <Spinner size="sm" /> : <i className="ti ti-send"></i>}
                   </button>
                 </InputGroup>
                 <div style={{ fontSize: 10, padding: '4px 8px', color: '#a8c3e8' }}>{aiDisabled ? "AI is disabled for this account after generating three capstone titles. Your saved recommendations are shown in the chat." : "Attach a CV to analyze your course-relevant skills and automatically generate three capstone titles (PDF, DOCX, TXT; max 10 MB)."}</div>
               </div>
-            </div>
+            </section>
           </Col>
         </Row>
       </div>

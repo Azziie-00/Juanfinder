@@ -1,0 +1,21 @@
+.application-file-list { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.application-file-modal { z-index: 1070; }
+.application-file-backdrop { z-index: 1065; }
+.application-file-row { display: flex; align-items: center; gap: 12px; }
+.application-file-row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.application-file-row button { flex-shrink: 0; }
+.application-file-row .btn { color: inherit; border-color: currentColor; }
+.application-file-row .btn:hover { color: #1a2a4a; }
+.adviser-pending-modal .application-file-list { color: rgba(255,255,255,.85); }
+.application-file-modal .modal-body { color: rgba(255,255,255,.85); }
+.application-file-modal .modal-title { color: #fff; }
+.application-file-modal .modal-title { overflow-wrap: anywhere; font-size: 18px; }
+.application-file-modal .modal-header { flex-direction: row; }
+.application-pdf-preview { width: 100%; }
+.application-pdf-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.application-pdf-toolbar span { font-size: 13px; }
+.application-pdf-pages { max-height: 65vh; overflow: auto; padding: 12px; background: #e5e7eb; }
+.application-pdf-pages canvas { display: block; max-width: 100%; margin: 0 auto; background: #fff; }
+.application-pdf-pages canvas[hidden] { display: none; }
+.application-word-preview { max-height: 65vh; overflow-y: auto; padding: 16px; background: #fff; color: #1a2a4a; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+@media (max-width: 576px) { .application-file-modal .modal-body { padding: 12px; } .application-pdf-pages { max-height: 60vh; } }

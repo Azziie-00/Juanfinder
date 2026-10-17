@@ -5,7 +5,7 @@ import { API_BASE_URL } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
 import '../styles/admin.css';
 
-type AdminUser = { UserID: number; UserCode: string; Username: string; Name: string; FirstName?: string; LastName?: string; Role: string; IsActive: boolean; Status?: string; ExpiresAt?: string | null; CreatedAt: string; Course?: string; AdviseeCount?: number };
+type AdminUser = { UserID: number; UserCode: string; Username: string; Name: string; FirstName?: string; LastName?: string; Role: string; IsActive: boolean; Status?: string; ExpiresAt?: string | null; CreatedAt: string; Course?: string; AdviserCapacity?: number; AdviseeCount?: number };
 type AdminGroup = { GroupID: number; GroupName: string; Course: string; Status: string; MemberCount: number; MaxMembers: number };
 type AdminPortfolio = { PortfolioID: number; UserID: number; Course: string; Title: string; Category: string; Description: string; FileName: string; FileType: string; FileSize: number; CreatedAt: string; StudentName: string; StudentCode: string };
 type GroupMemberData = {
@@ -60,6 +60,7 @@ export default function Admin() {
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [courses, setCourses] = useState<string[]>([]);
   const [view, setView] = useState<'users' | 'groups' | 'advisers' | 'portfolios'>('users');
+  const [courseFilters, setCourseFilters] = useState({ students: '', groups: '', advisers: '' });
   const [portfolioCourse, setPortfolioCourse] = useState('');
   const [portfolioResult, setPortfolioResult] = useState<{ course: string; items: AdminPortfolio[] } | null>(null);
   const [portfolioPreview, setPortfolioPreview] = useState<{ url: string; name: string } | null>(null);
@@ -67,6 +68,7 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [showAddUser, setShowAddUser] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [manageGroup, setManageGroup] = useState<GroupMemberData | null>(null);
@@ -76,6 +78,7 @@ export default function Admin() {
   const [editUser, setEditUser] = useState<AdminUser | null>(null);
   const [editPassword, setEditPassword] = useState('');
   const [editExpiresAt, setEditExpiresAt] = useState('');
+  const [editAdviserCapacity, setEditAdviserCapacity] = useState('10');
   const [newUser, setNewUser] = useState({
     firstName: '',
     lastName: '',
@@ -91,10 +94,16 @@ export default function Admin() {
     setLoading(true);
     setError('');
     try {
+      const courseFilter = view === 'groups'
+        ? courseFilters.groups
+        : view === 'advisers'
+          ? courseFilters.advisers
+          : courseFilters.students;
+      const courseParam = courseFilter ? `&course=${encodeURIComponent(courseFilter)}` : '';
       const [summaryRes, usersRes, groupsRes, coursesRes] = await Promise.all([
         fetch(`${API}/summary`, { headers: authHeaders(user, viewRole) }),
-        fetch(`${API}/users?page=${nextPage}&limit=10&role=${view === 'advisers' ? 'adviser' : 'student'}`, { headers: authHeaders(user, viewRole) }),
-        fetch(`${API}/groups`, { headers: authHeaders(user, viewRole) }),
+        fetch(`${API}/users?page=${nextPage}&limit=10&role=${view === 'advisers' ? 'adviser' : 'student'}${courseParam}`, { headers: authHeaders(user, viewRole) }),
+        fetch(`${API}/groups${courseFilter ? `?course=${encodeURIComponent(courseFilter)}` : ''}`, { headers: authHeaders(user, viewRole) }),
         fetch(`${API}/courses`, { headers: authHeaders(user, viewRole) }),
       ]);
 
@@ -107,6 +116,7 @@ export default function Admin() {
       setSummary(summaryData);
       setUsers(userData.items ?? []);
       setPage(userData.page ?? nextPage);
+      setTotalPages(Math.max(1, Number(userData.totalPages) || 1));
       setGroups(await groupsRes.json());
       setCourses(await coursesRes.json());
     } catch (requestError) {
@@ -114,7 +124,7 @@ export default function Admin() {
     } finally {
       setLoading(false);
     }
-  }, [user, viewRole, view]);
+  }, [user, viewRole, view, courseFilters]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -250,10 +260,12 @@ export default function Admin() {
         firstName: editUser.FirstName || editUser.Name.trim().split(/\s+/)[0],
         lastName: editUser.LastName || editUser.Name.trim().split(/\s+/).slice(1).join(' '),
         expiresAt: editExpiresAt || null,
+        ...(['student', 'adviser'].includes(editUser.Role) ? { course: editUser.Course || '' } : {}),
+        ...(editUser.Role === 'adviser' ? { adviserCapacity: editAdviserCapacity } : {}),
       }),
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       setError(data.message || 'Unable to edit user.');
       return;
@@ -265,15 +277,18 @@ export default function Admin() {
   };
 
   const removeGroup = async (group: AdminGroup) => {
-    if (!window.confirm(`Delete ${group.GroupName}?`)) return;
+    if (!window.confirm(`Delete ${group.GroupName}? Its members will be released from this group's adviser so they can form a new group and apply again.`)) return;
     const response = await fetch(`${API}/groups/${group.GroupID}`, {
       method: 'DELETE',
       headers: authHeaders(user, viewRole),
     });
 
-    if (response.ok) {
-      setGroups((current) => current.filter((item) => item.GroupID !== group.GroupID));
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setError(data.message || 'Unable to delete group.');
+      return;
     }
+    await load(page);
   };
 
   const loadGroupMembers = async (group: AdminGroup) => {
@@ -329,42 +344,53 @@ export default function Admin() {
   const portfolios = portfolioResult?.course === portfolioCourse ? portfolioResult.items : [];
 
   const renderUsersTable = (items: AdminUser[]) => (
-    <div className="admin-table-wrap">
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>User</th>
-            <th>Status</th>
-            <th>Expiration</th>
-            <th>Course</th>
-            <th>Control</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((record) => (
-            <tr key={record.UserID}>
-              <td>{record.UserCode || record.UserID}</td>
-              <td>
-                <strong>{record.Name || record.Username}</strong>
-                <small>{record.Username}</small>
-              </td>
-              <td>
-                <span className={`admin-status ${record.IsActive ? 'on' : 'off'}`}>{record.Status || (record.IsActive ? 'Active' : 'Disabled')}</span>
-              </td>
-              <td>{record.ExpiresAt ? new Date(record.ExpiresAt).toLocaleString() : 'No expiration'}</td>
-              <td>{record.Course || '—'}</td>
-              <td>
-                <button className="admin-action" onClick={() => { setEditUser({ ...record }); setEditExpiresAt(toLocalDateTime(record.ExpiresAt)); }} title="Edit user"><i className="ti ti-edit"></i></button>
-                <button className="admin-action" disabled={record.Status === 'Expired'} onClick={() => void toggleUser(record)}>{record.IsActive ? 'Disable' : 'Enable'}</button>
-                <button className="admin-action" onClick={() => void issueTemporaryAccess(record)} title="Issue seven-day temporary access"><i className="ti ti-clock"></i></button>
-                <button className="admin-action danger" onClick={() => void removeUser(record)} title="Delete user"><i className="ti ti-trash"></i></button>
-              </td>
+    <div className="admin-users-content">
+      <div className="admin-table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>User</th>
+              <th>Status</th>
+              <th>Expiration</th>
+              <th>Course</th>
+              <th>Control</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {!loading && items.length === 0 && <div className="admin-empty">No users found.</div>}
+          </thead>
+          <tbody>
+            {items.map((record) => (
+              <tr key={record.UserID}>
+                <td>{record.UserCode || record.UserID}</td>
+                <td>
+                  <strong>{record.Name || record.Username}</strong>
+                  <small>{record.Username}</small>
+                </td>
+                <td>
+                  <span className={`admin-status ${record.IsActive ? 'on' : 'off'}`}>{record.Status || (record.IsActive ? 'Active' : 'Disabled')}</span>
+                </td>
+                <td>{record.ExpiresAt ? new Date(record.ExpiresAt).toLocaleString() : 'No expiration'}</td>
+                <td>{record.Course || '—'}</td>
+                <td>
+                  <button className="admin-action" onClick={() => {
+                    setEditUser({ ...record, Course: courses.find(course => course.trim().toLowerCase() === record.Course?.trim().toLowerCase()) || '' });
+                    setEditExpiresAt(toLocalDateTime(record.ExpiresAt));
+                    setEditAdviserCapacity(String(record.AdviserCapacity ?? 10));
+                  }} title="Edit user"><i className="ti ti-edit"></i></button>
+                  <button className="admin-action" disabled={record.Status === 'Expired'} onClick={() => void toggleUser(record)}>{record.IsActive ? 'Disable' : 'Enable'}</button>
+                  <button className="admin-action" onClick={() => void issueTemporaryAccess(record)} title="Issue seven-day temporary access"><i className="ti ti-clock"></i></button>
+                  <button className="admin-action danger" onClick={() => void removeUser(record)} title="Delete user"><i className="ti ti-trash"></i></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!loading && items.length === 0 && <div className="admin-empty">No users found.</div>}
+      </div>
+      <div className="admin-pagination">
+        <span>Page {page} of {totalPages}</span>
+        <button type="button" disabled={loading || page <= 1} onClick={() => void load(page - 1)}>Previous</button>
+        <button type="button" disabled={loading || page >= totalPages} onClick={() => void load(page + 1)}>Next</button>
+      </div>
     </div>
   );
 
@@ -408,6 +434,24 @@ export default function Admin() {
               <button className={view === 'portfolios' ? 'active' : ''} onClick={() => setView('portfolios')}><i className="ti ti-folder"></i> Portfolios</button>
             </div>
             <div className="admin-panel-actions">
+              {view !== 'portfolios' && (
+                <select
+                  className="admin-course-filter"
+                  aria-label="Course filter"
+                  value={view === 'groups' ? courseFilters.groups : view === 'advisers' ? courseFilters.advisers : courseFilters.students}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setCourseFilters((current) => ({
+                      ...current,
+                      [view === 'groups' ? 'groups' : view === 'advisers' ? 'advisers' : 'students']: value,
+                    }));
+                    setPage(1);
+                  }}
+                >
+                  <option value="">All Courses</option>
+                  {courses.map((course) => <option key={course} value={course}>{course}</option>)}
+                </select>
+              )}
               {view === 'portfolios' ? (
                 <select className="admin-course-select" aria-label="Select course for portfolio review" value={portfolioCourse} onChange={(event) => setPortfolioCourse(event.target.value)}>
                   <option value="">Select Course</option>
@@ -420,6 +464,8 @@ export default function Admin() {
               </div>
             </div>
           </div>
+
+          {loading && view !== 'portfolios' && <div className="admin-loading" role="status">Loading {view === 'groups' ? 'groups' : view === 'advisers' ? 'advisers' : 'students'}…</div>}
 
           {view === 'groups' ? (
             <div className="admin-table-wrap">
@@ -517,7 +563,7 @@ export default function Admin() {
 
               <label>
                 Course
-                <select className="admin-course-select" value={newUser.course} onChange={(event) => setNewUser({ ...newUser, course: event.target.value })}>
+                <select required={(view === 'advisers' || newUser.role === 'adviser')} className="admin-course-select" value={newUser.course} onChange={(event) => setNewUser({ ...newUser, course: event.target.value })}>
                   <option value="">Select course</option>
                   {courses.map((course) => (
                     <option key={course} value={course}>{course}</option>
@@ -588,6 +634,33 @@ export default function Admin() {
                   setEditUser({ ...editUser, LastName: last, Name: `${first} ${last}`.trim() });
                 }} />
               </label>
+
+              {['student', 'adviser'].includes(editUser.Role) && <label>
+                Course
+                <select required className="admin-course-select" value={editUser.Course || ''} onChange={event => setEditUser({ ...editUser, Course: event.target.value })}>
+                  <option value="">Select course</option>
+                  {courses.map(course => <option key={course} value={course}>{course}</option>)}
+                </select>
+              </label>}
+              {editUser.Role === 'adviser' && (
+                <label>
+                  Adviser Slot Capacity
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={10}
+                    required
+                    value={editAdviserCapacity}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (/^\d*$/.test(value)) setEditAdviserCapacity(value);
+                    }}
+                    aria-describedby="adviser-capacity-help"
+                  />
+                  <small id="adviser-capacity-help">Enter the maximum number of groups this adviser can supervise. Use 0 to close applications.</small>
+                </label>
+              )}
 
               <label>
                 Password
