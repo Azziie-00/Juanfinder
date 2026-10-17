@@ -72,6 +72,20 @@ test('dashboard without 014 returns the same scoped report, counts, searches and
     assert.equal((await request('/adviser/dashboard', 1)).status, 403);
     storage.dashboardRpcError = { code: 'PGRST202' };
     assert.deepEqual((await request('/adviser/dashboard', 10)).body, expected);
+    // Reproduce a deployed 014 function that still references users profile columns.
+    await db.exec('set local check_function_bodies = off');
+    await db.exec(migration('014_adviser_dashboard_report.sql'));
+    storage.dashboardRpcError = null;
+    assert.deepEqual((await request('/adviser/dashboard', 10)).body, expected);
+    assert.deepEqual((await request('/adviser/dashboard?search=code2&adviserId=11', 10)).body.Groups.map(g => g.GroupID), [1]);
+    assert.deepEqual((await request('/adviser/dashboard?search=code3&adviserId=10', 11)).body.Groups.map(g => g.GroupID), [2]);
+    await db.exec(migration('017_repair_adviser_dashboard_report.sql').replace(/^BEGIN;|^COMMIT;/gm, ''));
+    assert.deepEqual((await request('/adviser/dashboard', 10)).body, expected);
+    for (const role of ['anon', 'authenticated']) {
+        assert.equal(await scalar("select has_function_privilege($1,'public.get_adviser_dashboard_report(bigint,text)','EXECUTE')", [role]), false);
+    }
+    storage.dashboardRpcError = { code: '42703', message: 'column unrelated_secret does not exist' };
+    assert.equal((await request('/adviser/dashboard', 10)).status, 503);
     storage.dashboardRpcError = { code: '42501' };
     assert.equal((await request('/adviser/dashboard', 10)).status, 503);
     storage.dashboardRpcError = null;

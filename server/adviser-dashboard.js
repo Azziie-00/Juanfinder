@@ -1,4 +1,8 @@
 const missingRpcFunction = error => ['PGRST202', '42883'].includes(error?.code);
+// An older 014 report can survive the role-profile split (or be reapplied later).
+// Recover only known moved report columns; permissions and unrelated SQL errors fail closed.
+const staleReportColumns = error => error?.code === '42703'
+    && /column\s+(?:[a-z_]+\.)?(?:course|adviser_capacity)\s+does not exist/i.test(error.message || '');
 const missingActivityColumn = error => ['42703', 'PGRST204'].includes(error?.code)
     && String(error?.message || '').includes('previous_activity_at');
 
@@ -25,7 +29,7 @@ async function readBatches(ids, makeQuery) {
 async function loadAdviserDashboard(supabase, adviser, search) {
     const result = await supabase.rpc('get_adviser_dashboard_report', { p_adviser_id: adviser.user_id, p_search: search });
     if (!result.error) return result.data;
-    if (!missingRpcFunction(result.error)) throw result.error;
+    if (!missingRpcFunction(result.error) && !staleReportColumns(result.error)) throw result.error;
 
     // Compatibility path for deployments without 014 or with a stale RPC schema cache.
     // Every group is scoped to the authenticated identity before reading any students.
