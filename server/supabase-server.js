@@ -11,6 +11,7 @@ const { createClient } = require("@supabase/supabase-js");
 const cors = require("cors");
 const { parseApplicationFiles } = require("./application-files");
 const { createRecommendationHandler } = require("./group-recommendations");
+const { loadAdviserDashboard, missingRpcFunction, missingActivityColumn } = require("./adviser-dashboard");
 const { createAdviserRecommendationHandler } = require("./adviser-recommendations");
 
 const app = express();
@@ -158,8 +159,13 @@ const getUser = async (req, res, next) => {
     if (!token) return res.status(401).json({ success: false, message: "A valid signed-in session is required." });
     try {
         const sessionHash = crypto.createHash("sha256").update(token).digest("hex");
-        const { data: session, error: sessionError } = await supabase.from("auth_sessions")
-            .select("user_id,expires_at").eq("session_hash", sessionHash).gt("expires_at", new Date().toISOString()).maybeSingle();
+        let { data: session, error: sessionError } = await supabase.from("auth_sessions")
+            .select("user_id,expires_at,previous_activity_at").eq("session_hash", sessionHash).gt("expires_at", new Date().toISOString()).maybeSingle();
+        const activityTrackingAvailable = !missingActivityColumn(sessionError);
+        if (!activityTrackingAvailable) {
+            ({ data: session, error: sessionError } = await supabase.from("auth_sessions")
+                .select("user_id,expires_at").eq("session_hash", sessionHash).gt("expires_at", new Date().toISOString()).maybeSingle());
+        }
         if (sessionError) throw sessionError;
         if (!session) return res.status(401).json({ success: false, message: "Your session has expired. Sign in again." });
         const { data, error } = await supabase.from("users").select("*").eq("user_id", session.user_id)
@@ -173,6 +179,8 @@ const getUser = async (req, res, next) => {
         }
         req.user = data;
         req.sessionHash = sessionHash;
+        req.previousActivityAt = session.previous_activity_at || null;
+        req.activityTrackingAvailable = activityTrackingAvailable;
         const previewRole = req.header("x-view-role");
         req.effectiveRole = data.role === "superadmin" && process.env.NODE_ENV !== "production" && ["student", "adviser", "admin", "library"].includes(previewRole)
             ? previewRole
@@ -260,10 +268,57 @@ app.post("/api/login", async (req, res) => {
     }
 });
 
+app.post("/api/activity", getUser, async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    if (!req.activityTrackingAvailable) return res.status(202).json({ success: false, trackingAvailable: false });
+    const { data, error } = await supabase.rpc("record_website_activity", { p_session_hash: req.sessionHash });
+    if (missingRpcFunction(error)) return res.status(202).json({ success: false, trackingAvailable: false });
+    if (error) return res.status(503).json({ message: "Unable to record website activity. Check migration 015." });
+    if (!data) return res.status(401).json({ message: "Your session has expired. Sign in again." });
+    res.set("Cache-Control", "no-store").json({ success: true });
+});
+
 app.post("/api/logout", getUser, async (req, res) => {
+    const { error: activityError } = await supabase.rpc("record_website_activity", { p_session_hash: req.sessionHash });
+    if (activityError && !missingRpcFunction(activityError)) console.warn("Unable to record logout activity.", { code: activityError.code || "unknown" });
     const { error } = await supabase.from("auth_sessions").delete().eq("session_hash", req.sessionHash);
     if (error) return res.status(500).json({ success: false, message: "Unable to end the session." });
     res.json({ success: true });
+});
+
+app.post("/api/account/password", getUser, async (req, res) => {
+    // Use the real account role, never a development role preview or a supplied user ID.
+    if (!["student", "adviser", "library"].includes(req.user.role)) {
+        return res.status(403).json({ success: false, message: "Password changes are available for Student, Adviser and Librarian accounts." });
+    }
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+    if (typeof currentPassword !== "string" || !currentPassword || currentPassword.length > 128
+        || typeof newPassword !== "string" || typeof confirmPassword !== "string") {
+        return res.status(400).json({ success: false, message: "Enter your current password, new password and confirmation." });
+    }
+    if (newPassword !== confirmPassword) return res.status(400).json({ success: false, message: "New passwords do not match." });
+    if (newPassword.length < 8 || Buffer.byteLength(newPassword, 'utf8') > 72) {
+        return res.status(400).json({ success: false, message: "New password must contain at least 8 characters and no more than 72 UTF-8 bytes." });
+    }
+    const passwordError = validatePassword(newPassword);
+    if (passwordError) return res.status(400).json({ success: false, message: passwordError });
+    try {
+        if (!(await bcrypt.compare(currentPassword, req.user.password_hash))) {
+            return res.status(400).json({ success: false, message: "Current password is incorrect." });
+        }
+        if (await bcrypt.compare(newPassword, req.user.password_hash)) {
+            return res.status(400).json({ success: false, message: "Choose a different new password." });
+        }
+        const { data, error } = await supabase.rpc("change_account_password", {
+            p_session_hash: req.sessionHash, p_current_hash: req.user.password_hash,
+            p_new_hash: await bcrypt.hash(newPassword, 12),
+        });
+        if (error) return res.status(503).json({ success: false, message: "Unable to change your password. Please try again or contact your administrator if this continues." });
+        if (!data) return res.status(409).json({ success: false, message: "Your account or session changed. Sign in again before retrying." });
+        res.json({ success: true, message: "Password changed successfully. Other sessions have been signed out." });
+    } catch {
+        res.status(500).json({ success: false, message: "Unable to change your password. Please try again." });
+    }
 });
 
 app.post("/api/password/change", getUser, async (req, res) => {
@@ -292,6 +347,7 @@ app.get("/api/health/db", async (_req, res) => {
 
 app.get("/api/profile", getUser, async (req, res) => {
     const user = req.user;
+    res.set("Cache-Control", "no-store");
     res.json({
         UserID: Number(user.user_id),
         FirstName: user.first_name || user.name.split(/\s+/)[0] || "",
@@ -307,6 +363,8 @@ app.get("/api/profile", getUser, async (req, res) => {
         Gender: user.gender || "",
         Socials: user.socials || "",
         Requirements: user.requirements || "",
+        PreviousActivityAt: req.previousActivityAt,
+        ActivityTrackingAvailable: req.activityTrackingAvailable,
     });
 });
 
@@ -542,15 +600,14 @@ app.get("/api/adviser/dashboard", getUser, async (req, res) => {
     }
     const search = String(req.query.search ?? "").trim();
     if (search.length > 200) return res.status(400).json({ message: "Search must not exceed 200 characters." });
-    const { data, error } = await supabase.rpc("get_adviser_dashboard_report", {
-        p_adviser_id: req.user.user_id, p_search: search,
-    });
-    if (error) {
+    try {
+        const data = await loadAdviserDashboard(supabase, req.user, search);
+        if (!data) return res.status(403).json({ message: "An adviser account is required." });
+        res.set("Cache-Control", "no-store").json(data);
+    } catch (error) {
         console.warn("Adviser dashboard report failed.", { code: error.code || "unknown" });
-        return res.status(503).json({ message: "Your adviser dashboard is temporarily unavailable. Please try again or contact an administrator.", repair: "Apply migrations through 014; see server/ADVISER_WORKFLOW.md." });
+        return res.status(503).json({ message: "Your adviser dashboard is temporarily unavailable. Please try again or contact an administrator." });
     }
-    if (!data) return res.status(403).json({ message: "An adviser account is required." });
-    res.set("Cache-Control", "no-store").json(data);
 });
 
 app.get("/api/adviser/groups", getUser, async (req, res) => {
@@ -611,7 +668,24 @@ app.patch("/api/adviser/profile", getUser, async (req, res) => {
         return res.status(400).json({ success: false, message: "Select a valid gender option." });
     }
     const requirements = requirementRows.join("\n");
-    const { error } = await supabase.from("users").update({ bio, gender, requirements }).eq("user_id", req.user.user_id).eq("role", "adviser");
+    const updates = { bio, gender, requirements };
+    if (req.body.skills !== undefined) {
+        if (!Array.isArray(req.body.skills) || req.body.skills.some(skill => typeof skill !== "string")) {
+            return res.status(400).json({ success: false, message: "Skills must be a list of text values." });
+        }
+        const skills = [...new Set(req.body.skills.map(skill => skill.trim()).filter(Boolean))];
+        if (skills.length > 30 || skills.some(skill => skill.length > 80)) {
+            return res.status(400).json({ success: false, message: "Add up to 30 skills, with at most 80 characters per skill." });
+        }
+        updates.skills = skills;
+    }
+    if (req.body.specialty !== undefined) {
+        if (typeof req.body.specialty !== "string" || req.body.specialty.trim().length > 500) {
+            return res.status(400).json({ success: false, message: "Specialties must be text with at most 500 characters." });
+        }
+        updates.specialty = req.body.specialty.trim();
+    }
+    const { error } = await supabase.from("users").update(updates).eq("user_id", req.user.user_id).eq("role", "adviser");
     if (error) return res.status(500).json({ success: false, message: "Unable to save adviser details." });
     res.json({ success: true });
 });

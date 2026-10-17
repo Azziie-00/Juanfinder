@@ -14,6 +14,156 @@ const submit = (group = 1, leader = 1, adviser = 10) => scalar('select public.su
 const respond = (id, adviser = 10, accept = true) => scalar('select public.respond_to_group_adviser_application($1,$2,$3)', [id, adviser, accept]);
 const slots = () => db.query('select assigned_groups, remaining_slots from adviser_slot_availability where user_id=10').then(r => r.rows[0]);
 
+test('self-service password changes validate current credentials, persist for all three roles and revoke only other sessions', () => fixture(async () => {
+    const bcrypt = require('bcryptjs');
+    const oldPassword = 'OriginalPass!23', newPassword = 'UpdatedPass!45';
+    const hash = await bcrypt.hash(oldPassword, 4);
+    await db.exec("update users set role='library' where user_id=9");
+    for (const id of [1, 10, 9]) {
+        await db.query('update users set password_hash=$1 where user_id=$2', [hash, id]);
+        await db.query("insert into auth_sessions(session_hash,user_id,expires_at) values ($1,$2,now()+interval '1 hour')", ['other-session-' + id, id]);
+        const body = { currentPassword: oldPassword, newPassword, confirmPassword: newPassword, userId: 11 };
+        assert.equal((await request('/account/password', id, { ...body, currentPassword: 'wrong' })).status, 400);
+        assert.equal((await request('/account/password', id, { ...body, confirmPassword: 'mismatch' })).status, 400);
+        assert.equal((await request('/account/password', id, { ...body, newPassword: 'weakpass', confirmPassword: 'weakpass' })).status, 400);
+        assert.equal((await request('/account/password', id, { ...body, newPassword: oldPassword, confirmPassword: oldPassword })).status, 400);
+        assert.equal((await request('/account/password', id, { ...body, newPassword: 'A1!' + 'é'.repeat(36), confirmPassword: 'A1!' + 'é'.repeat(36) })).status, 400);
+        assert.equal((await request('/account/password', id, body)).status, 200);
+        const stored = await scalar('select password_hash from users where user_id=$1', [id]);
+        assert.notEqual(stored, newPassword); assert.equal(await bcrypt.compare(newPassword, stored), true);
+        assert.equal(await bcrypt.compare(oldPassword, stored), false);
+        assert.equal(await scalar('select count(*) from auth_sessions where user_id=$1', [id]), 1);
+        assert.equal((await request('/profile', id)).status, 200);
+        const role = id === 1 ? 'student' : id === 10 ? 'adviser' : 'library';
+        assert.equal((await request('/login', id, { username: `user${id}`, password: oldPassword, role })).status, 401);
+        assert.equal((await request('/login', id, { username: `user${id}`, password: newPassword, role })).status, 200);
+        // A stale credential snapshot cannot overwrite a newer password.
+        const sessionHash = require('node:crypto').createHash('sha256').update(token(id)).digest('hex');
+        assert.equal(await scalar('select change_account_password($1,$2,$3)', [sessionHash, hash, stored]), false);
+    }
+    assert.equal(await scalar('select password_hash from users where user_id=11'), 'unused');
+    assert.equal((await request('/account/password', 999, {})).status, 401);
+    await db.exec("update users set role='admin' where user_id=9");
+    assert.equal((await request('/account/password', 9, {})).status, 403);
+    await db.exec("update users set password_change_required=true where user_id=1");
+    assert.equal((await request('/account/password', 1, {})).status, 403);
+    await db.exec(migration('016_change_account_password.sql').replace(/^BEGIN;|^COMMIT;/gm, ''));
+    for (const role of ['anon', 'authenticated']) assert.equal(await scalar("select has_function_privilege($1,'public.change_account_password(text,text,text)','EXECUTE')", [role]), false);
+}));
+
+test('dashboard without 014 returns the same scoped report, counts, searches and legacy owners', () => fixture(async () => {
+    await db.exec('update users set adviser_capacity=4 where user_id=10');
+    await respond(await submit()); await respond(await submit(2, 3, 11), 11);
+    await db.exec('delete from group_members where user_id=1; update groups set adviser_id=10 where group_id=3');
+    const expected = (await request('/adviser/dashboard', 10)).body;
+    await db.exec('drop function get_adviser_dashboard_report(bigint,text)');
+    storage.pageCap = 1;
+    const actual = await request('/adviser/dashboard?adviserId=11', 10);
+    assert.equal(actual.status, 200); assert.deepEqual(actual.body, expected);
+    assert.deepEqual(actual.body.Summary, { Groups: 2, StudentMembers: 3, Capacity: 4, AvailableSlots: 2 });
+    for (const search of ['USER 2', 'CODE2']) {
+        const filtered = await request('/adviser/dashboard?search=' + encodeURIComponent(search), 10);
+        assert.deepEqual(filtered.body.Groups.map(g => g.GroupID), [1]);
+        assert.deepEqual(filtered.body.Summary, expected.Summary);
+    }
+    assert.deepEqual((await request('/adviser/dashboard?search=code3', 10)).body.Groups, []);
+    assert.deepEqual((await request('/adviser/dashboard?search=%25', 10)).body.Groups, []);
+    assert.deepEqual((await request('/adviser/dashboard?search=code1&adviserId=10', 11)).body.Groups, []);
+    assert.equal((await request('/adviser/dashboard', 1)).status, 403);
+    storage.dashboardRpcError = { code: 'PGRST202' };
+    assert.deepEqual((await request('/adviser/dashboard', 10)).body, expected);
+    storage.dashboardRpcError = { code: '42501' };
+    assert.equal((await request('/adviser/dashboard', 10)).status, 503);
+    storage.dashboardRpcError = null;
+    await db.exec('alter table group_members rename to unavailable_members');
+    assert.equal((await request('/adviser/dashboard', 10)).status, 503);
+}));
+
+test('dashboard fallback includes every group/student across server row caps and export pages', () => fixture(async () => {
+    await db.exec(`update users set adviser_capacity=1200 where user_id=10;
+        insert into users(user_id,user_code,username,password_hash,name,role,course)
+        select n, 'SID'||lpad(n::text,6,'0'), 'report.user'||n, 'unused', 'Report Student '||n, 'student', 'BSIT' from generate_series(100,1200) n;
+        insert into groups(group_id,group_name,course,owner_id,adviser_id) select n, 'Report '||n, 'BSIT', n, 10 from generate_series(100,1200) n;
+        insert into group_members(group_id,user_id) select n,n from generate_series(100,1200) n;`);
+    await db.exec('drop function get_adviser_dashboard_report(bigint,text)');
+    storage.pageCap = 37;
+    const report = await request('/adviser/dashboard', 10);
+    assert.equal(report.status, 200);
+    assert.equal(report.body.Groups.length, 1101);
+    assert.deepEqual(report.body.Summary, { Groups: 1101, StudentMembers: 1101, Capacity: 1200, AvailableSlots: 99 });
+    assert.equal(new Set(report.body.Groups.flatMap(g => g.Members.map(s => s.UserID))).size, 1101);
+    const search = await request('/adviser/dashboard?search=SID001200', 10);
+    assert.deepEqual(search.body.Groups.map(g => g.GroupID), [1200]);
+}));
+
+test('missing optional 015 does not block authentication, dashboard or logout, and history stays honest', () => fixture(async () => {
+    await respond(await submit());
+    await db.exec(`drop function get_adviser_dashboard_report(bigint,text);
+        drop trigger auth_session_website_activity on auth_sessions;
+        drop function record_website_activity(text);
+        alter table auth_sessions drop column previous_activity_at;`);
+    assert.equal((await request('/adviser/dashboard', 10)).status, 200);
+    const profile = await request('/profile', 10);
+    assert.equal(profile.status, 200); assert.equal(profile.body.ActivityTrackingAvailable, false); assert.equal(profile.body.PreviousActivityAt, null);
+    const activity = await request('/activity', 10, {});
+    assert.equal(activity.status, 202); assert.equal(activity.body.trackingAvailable, false);
+    assert.equal((await request('/logout', 10, {})).status, 200);
+    assert.equal((await request('/profile', 10)).status, 401);
+}));
+
+test('website activity persists across real logout/login and keeps each session history private and stable', () => fixture(async () => {
+    const password = 'ActivityTest!23';
+    const passwordHash = await require('bcryptjs').hash(password, 4);
+    const authed = async (sessionToken, route, body, method = body ? 'POST' : 'GET') => {
+        const response = await fetch(origin + route, { method, headers: { authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+        return { status: response.status, body: await response.json() };
+    };
+    for (const [id, role] of [[1, 'student'], [10, 'adviser']]) {
+        await db.query('delete from auth_sessions where user_id=$1', [id]);
+        await db.query('update users set last_activity_at=null, password_hash=$1 where user_id=$2', [passwordHash, id]);
+        const otherBefore = await scalar('select last_activity_at from users where user_id=2');
+        assert.equal((await request('/login', id, { username: `user${id}`, password: 'wrong', role })).status, 401);
+        assert.equal(await scalar('select last_activity_at from users where user_id=$1', [id]), null);
+        const first = await request('/login', id, { username: `user${id}`, password, role });
+        assert.equal(first.status, 200);
+        const firstToken = first.body.user.sessionToken;
+        assert.equal((await authed(firstToken, '/profile')).body.PreviousActivityAt, null);
+        assert.equal((await authed(firstToken, '/activity', { userId: 2, lastActivityAt: '2099-01-01' })).status, 200);
+        assert.deepEqual(await scalar('select last_activity_at from users where user_id=2'), otherBefore);
+        assert.equal((await authed(firstToken, '/profile?userId=2')).body.PreviousActivityAt, null);
+        assert.equal((await authed(firstToken, '/logout', {})).status, 200);
+        const endedAt = new Date(await scalar('select last_activity_at from users where user_id=$1', [id])).toISOString();
+        assert.equal((await authed(firstToken, '/activity', {})).status, 401);
+        const second = await request('/login', id, { username: `user${id}`, password, role });
+        assert.equal(second.status, 200);
+        const secondToken = second.body.user.sessionToken;
+        assert.equal((await authed(secondToken, '/profile')).body.PreviousActivityAt, endedAt);
+        await authed(secondToken, '/activity', {});
+        await authed(secondToken, '/notifications'); // Background reads must not move saved activity.
+        assert.equal((await authed(secondToken, '/profile')).body.PreviousActivityAt, endedAt);
+        const beforeMigration = await db.query('select * from auth_sessions where user_id=$1 order by created_at', [id]);
+        await db.exec(migration('015_website_activity.sql'));
+        assert.deepEqual((await db.query('select * from auth_sessions where user_id=$1 order by created_at', [id])).rows, beforeMigration.rows);
+        const currentTime = new Date(await scalar('select last_activity_at from users where user_id=$1', [id])).toISOString();
+        const third = await request('/login', id, { username: `user${id}`, password, role });
+        assert.equal((await authed(third.body.user.sessionToken, '/profile')).body.PreviousActivityAt, currentTime);
+        assert.equal((await authed(secondToken, '/profile')).body.PreviousActivityAt, endedAt);
+    }
+    assert.equal((await request('/activity', 99, {})).status, 401);
+    await fails(() => db.exec("SET LOCAL ROLE authenticated; SELECT record_website_activity('anything')"), /permission denied/);
+    await fails(() => db.exec("SET LOCAL ROLE anon; SELECT record_website_activity('anything')"), /permission denied/);
+}));
+
+test('expired sessions cannot record activity and session cleanup preserves account history', () => fixture(async () => {
+    const sessionHash = require('node:crypto').createHash('sha256').update(token(1)).digest('hex');
+    await db.query("update auth_sessions set expires_at=clock_timestamp()-interval '1 minute' where session_hash=$1", [sessionHash]);
+    const previous = await scalar('select last_activity_at from users where user_id=1');
+    assert.equal(await scalar('select record_website_activity($1)', [sessionHash]), null);
+    assert.equal((await request('/activity', 1, {})).status, 401);
+    await db.query('delete from auth_sessions where session_hash=$1', [sessionHash]);
+    assert.deepEqual(await scalar('select last_activity_at from users where user_id=1'), previous);
+}));
+
 test('dashboard counts assigned groups and unique members, includes legacy owners and scopes student search', () => fixture(async () => {
     await respond(await submit());
     await db.exec('delete from group_members where user_id=1; update users set adviser_capacity=3 where user_id=10');
@@ -48,6 +198,26 @@ test('dashboard report has no API page limit and migration reruns preserve assig
     assert.equal(result.body.Summary.AvailableSlots, 99);
     await db.exec(migration('014_adviser_dashboard_report.sql'));
     assert.equal((await request('/adviser/dashboard', 10)).body.Groups.length, 1101);
+}));
+
+test('adviser skills and specialties persist privately, validate limits and preserve omitted fields', () => fixture(async () => {
+    const expertise = { bio: 'Adviser bio', requirements: ['Proposal'], gender: '', skills: [' Python ', 'Data Analysis', 'Python', ''], specialty: ' Artificial Intelligence ', userId: 11 };
+    assert.equal((await request('/adviser/profile', 10, expertise, 'PATCH')).status, 200);
+    let profile = (await request('/profile', 10)).body;
+    assert.deepEqual(profile.Skills, ['Python', 'Data Analysis']); assert.equal(profile.Specialty, 'Artificial Intelligence');
+    assert.deepEqual((await request('/profile', 11)).body.Skills, []);
+    assert.equal((await request('/profile', 11)).body.Specialty, '');
+    assert.equal((await request('/adviser/profile', 10, { bio: 'Changed bio', requirements: ['Proposal'] }, 'PATCH')).status, 200);
+    assert.deepEqual((await request('/profile', 10)).body.Skills, profile.Skills);
+    assert.equal((await request('/profile', 10)).body.Specialty, profile.Specialty);
+    for (const invalid of [{ skills: 'Python' }, { skills: [123] }, { skills: Array.from({ length: 31 }, (_, i) => `Skill ${i}`) }, { skills: ['x'.repeat(81)] }, { specialty: 'x'.repeat(501) }, { specialty: {} }]) {
+        assert.equal((await request('/adviser/profile', 10, { ...expertise, ...invalid }, 'PATCH')).status, 400);
+    }
+    assert.deepEqual((await request('/profile', 10)).body.Skills, profile.Skills);
+    assert.equal((await request('/adviser/profile', 1, expertise, 'PATCH')).status, 403);
+    assert.equal((await request('/adviser/profile', 10, { ...expertise, skills: [], specialty: '' }, 'PATCH')).status, 200);
+    profile = (await request('/profile', 10)).body;
+    assert.deepEqual(profile.Skills, []); assert.equal(profile.Specialty, '');
 }));
 
 test('Settings profile APIs persist only permitted fields on the signed-in account', () => fixture(async () => {
@@ -130,6 +300,7 @@ function sqlTransport() {
             async download(key) { return storage.files.has(key) ? { data: new Blob([storage.files.get(key).buffer]), error: null } : { data: null, error: new Error('File missing') }; },
         }; } },
         rpc(name, args = {}) {
+            if (storage.dashboardRpcError && name === 'get_adviser_dashboard_report') return Promise.resolve({ data: null, error: storage.dashboardRpcError });
             if (storage.expiryFails && name === 'expire_group_adviser_applications') return Promise.resolve({ data: null, error: { code: '57014' } });
             const values = Object.values(args).map(value => value && typeof value === 'object' ? JSON.stringify(value) : value);
             return run(`select public.${name}(${values.map((_, i) => `$${i + 1}`).join(',')}) as result`, values)
@@ -152,14 +323,17 @@ function sqlTransport() {
                     mutation = `insert into public.${table} (${entries.map(([key]) => key).join(',')}) values (${values.map((_,i) => `$${i+1}`).join(',')})`;
                     return q;
                 },
+                delete() { mutation = `delete from public.${table}`; return q; },
                 update(record) {
                     mutation = `update public.${table} set ${Object.entries(record).map(([key,value]) => { values.push(value); return `${key}=$${values.length}`; }).join(',')}`;
                     return q;
                 },
+                lt(key, value) { values.push(value); where.push(`${key}<$${values.length}`); return q; },
                 gt(key, value) { values.push(value); where.push(`${key}>$${values.length}`); return q; },
                 in(key, list) { where.push(`${key} in (${list.map(value => { values.push(value); return `$${values.length}`; }).join(',')})`); return q; },
                 order(key, opts) { order.push(`${key} ${opts?.ascending === false ? 'desc' : 'asc'}`); return q; },
                 limit(n) { limit = `limit ${Number(n)}`; return q; },
+                range(start, end) { limit = `limit ${Math.min(end - start + 1, storage.pageCap || Infinity)} offset ${start}`; return q; },
                 maybeSingle() { single = true; return q; },
                 single() { single = true; return q; },
                 then(resolve, reject) {
@@ -186,6 +360,7 @@ async function request(route, id, body, method = body ? 'POST' : 'GET') {
 }
 
 async function fixture(run) {
+    storage.pageCap = null; storage.dashboardRpcError = null;
     storage.files.clear(); storage.removed = []; storage.uploads = 0; storage.failAt = 0; storage.metadataLookupFails = false; storage.expiryFails = false;
     await db.exec(`BEGIN;
         INSERT INTO users(user_id,user_code,username,password_hash,name,role,course,adviser_capacity)

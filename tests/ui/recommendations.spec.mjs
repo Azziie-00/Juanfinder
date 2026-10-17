@@ -9,6 +9,7 @@ async function setup(page, options = {}) {
   const applications = [];
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname.replace(/^\/api/, '');
+      if (path === '/api/activity' || path === '/activity') return route.fulfill({ json: { success: true } });
     let data;
     if (path === '/notifications') data = { items: [], unreadCount: 0, hasMore: false };
     else if (path === '/dashboard/stats') data = { finder: 37, adviser: 7 };

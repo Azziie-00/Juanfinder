@@ -16,6 +16,7 @@ async function setup(page, role = 'adviser', adviserCourse = ' \tbsit ', groupCo
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^\/api/, '');
+      if (path === '/api/activity' || path === '/activity') return route.fulfill({ json: { success: true } });
     let data;
     if (path === '/notifications') data = { items: [], unreadCount: 0, hasMore: false, nextCursor: null };
     else if (path === '/adviser/groups') data = [group];
@@ -137,6 +138,7 @@ test('admin edit form saves and reloads an existing adviser course', async ({ pa
   let saved;
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
+      if (path === '/api/activity' || path === '/activity') return route.fulfill({ json: { success: true } });
     let data;
     if (path === '/api/notifications') data = { items: [], unreadCount: 0, hasMore: false, nextCursor: null };
     else if (path === '/api/admin/users/10' && route.request().method() === 'PATCH') {

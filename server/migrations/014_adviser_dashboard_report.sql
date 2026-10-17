@@ -42,3 +42,4 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.get_adviser_dashboard_report(BIGINT,TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_adviser_dashboard_report(BIGINT,TEXT) TO service_role;
+NOTIFY pgrst, 'reload schema';

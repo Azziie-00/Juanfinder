@@ -18,7 +18,11 @@ export default function Profile() {
   const [profile, setProfile] = useState<StudentProfile>(() => {
     return { studentId: '', course: user?.course || '', yearLevel: '', birthdate: '', gender: '', socials: '', bio: '', skills: [], lastLogin: '' };
   });
+  const [previousActivityAt, setPreviousActivityAt] = useState<string | null>(null);
+  const [activityLoaded, setActivityLoaded] = useState(false);
+  const [activityAvailable, setActivityAvailable] = useState(true);
   const [firstName, setFirstName] = useState('');
+  const [specialty, setSpecialty] = useState('');
   const [lastName, setLastName] = useState('');
   const [projects, setProjects] = useState<PortfolioEntry[]>([]);
   const [requirements, setRequirements] = useState<string[]>([]);
@@ -44,7 +48,11 @@ export default function Profile() {
       if (!profileResponse.ok) throw new Error(profileData.message || 'Unable to load your profile.');
       const portfolioData = portfolioResponse ? await portfolioResponse.json() : [];
       if (portfolioResponse && !portfolioResponse.ok) throw new Error(portfolioData.message || 'Unable to load your portfolio.');
+      setPreviousActivityAt(profileData.PreviousActivityAt || null);
+      setActivityLoaded(true);
+      setActivityAvailable(profileData.ActivityTrackingAvailable !== false);
       setFirstName(profileData.FirstName || '');
+      setSpecialty(profileData.Specialty || '');
       setLastName(profileData.LastName || '');
       setRequirements(String(profileData.Requirements || '').split('\n').map((item: string) => item.trim()).filter(Boolean));
       setProfile({
@@ -159,13 +167,14 @@ export default function Profile() {
           <div className="profile-right">
             <div className="profile-misc-card">
               <div className="profile-misc-title">MISCELLANEOUS</div>
-              <div className="profile-misc-sub">Last login: {profile.lastLogin || 'Not available'}</div>
+              <div className="profile-misc-sub">Last active: {!activityLoaded ? (error ? 'Activity unavailable.' : 'Loading activity…') : !activityAvailable ? 'Activity tracking is unavailable.' : previousActivityAt ? <time dateTime={previousActivityAt}>{new Date(previousActivityAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'long' })}</time> : 'No previous activity recorded.'}</div>
             </div>
 
             {isAdviser && <div className="profile-info-card">
               <div className="profile-info-header"><div className="profile-info-header-text">ADVISER INFORMATION</div></div>
               <div className="profile-info-body">{[
                 ['Adviser ID', profile.studentId], ['Course', profile.course], ['Gender', profile.gender || 'Not provided'],
+                ['Skills', profile.skills.join(', ') || 'Not provided'], ['Specialties', specialty || 'Not provided'],
               ].map(([label, value]) => <div className="profile-info-row" key={label}><div className="profile-info-label">{label}</div><div className="profile-info-colon">:</div><div className="profile-info-value">{value}</div></div>)}</div>
             </div>}
 

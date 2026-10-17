@@ -4,6 +4,7 @@ import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
 import { API_BASE_URL, readApiResponse } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
+import '../styles/adviser.css';
 import '../styles/adviser-groups.css';
 
 type AdviserGroupRecord = {
@@ -55,7 +56,6 @@ export default function StudentList() {
       <main className="adviser-groups-page student-members-page">
         <header className="adviser-groups-header">
           <div>
-            <div className="admin-eyebrow">ADVISER WORKSPACE</div>
             <h1>Student Members</h1>
             <p>Group members from capstone groups assigned to you.</p>
           </div>
@@ -80,7 +80,7 @@ export default function StudentList() {
             <div className="adviser-groups-state">No group members have been assigned to you yet.</div>
           ) : (
             <div className="adviser-groups-table-wrap">
-              <table className="adviser-groups-table student-member-table">
+              <table className="adviser-table adviser-groups-table student-member-table">
                 <thead>
                   <tr><th>Student</th><th>Group name</th><th>Course</th></tr>
                 </thead>

@@ -8,7 +8,7 @@
     "test:ui": "playwright test",
     "test": "node --test server/group-recommendations.test.js server/adviser-workflow.test.js server/adviser-recommendations.test.js",
     "dev": "vite",
-    "server": "node server/server.js",
+    "server": "node --watch server/server.js",
     "start": "node server/server.js",
     "build": "tsc -b && vite build",
     "lint": "eslint .",

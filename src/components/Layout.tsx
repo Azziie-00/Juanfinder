@@ -5,6 +5,7 @@ import { getInitials } from '../data/datas';
 import { API_BASE_URL } from '../data/api';
 import { authHeaders } from '../context/authContext.instance';
 import NotificationBell from './NotificationBell';
+import useWebsiteActivity from './useWebsiteActivity';
 
 const STUDENT_NAV_LINKS = [
   { to:'/',        icon:'ti-layout-dashboard', label:'Dashboard' },
@@ -12,14 +13,12 @@ const STUDENT_NAV_LINKS = [
   { to:'/adviser', icon:'ti-user-circle',      label:'Adviser'   },
   { to:'/mygroup', icon:'ti-users-group',      label:'My Group'  },
   { to:'/library', icon:'ti-books',            label:'Library'   },
-  { to:'/settings', icon:'ti-settings', label:'Settings' },
 ];
 
 const ADVISER_NAV_LINKS = [
   { to:'/',         icon:'ti-home',        label:'Dashboard'    },
   { to:'/group',    icon:'ti-settings',    label:'Group'        },
   { to:'/students', icon:'ti-list-details',label:'Student Members' },
-  { to:'/settings', icon:'ti-settings', label:'Settings' },
 ];
 
 const ADMIN_NAV_LINKS = [
@@ -40,6 +39,7 @@ const isMobileViewport = () => window.matchMedia(mobileQuery).matches;
 
 export default function Layout({ children, hideSidebar = false }: { children: ReactNode; hideSidebar?: boolean }) {
   const { user, viewRole, effectiveRole, switchViewRole, logout } = useAuth();
+  useWebsiteActivity();
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useSyncExternalStore(subscribeToViewport, isMobileViewport, () => false);
@@ -87,8 +87,10 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
     const h = (e: MouseEvent) => {
       if (ddRef.current && !ddRef.current.contains(e.target as Node)) setDdOpen(false);
     };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setDdOpen(false); };
+    document.addEventListener('pointerdown', h);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', h); document.removeEventListener('keydown', escape); };
   }, []);
 
   return (
@@ -136,15 +138,15 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
             <NotificationBell key={`${user?.id}:${viewRole || user?.role}`} />
 
             <div ref={ddRef} style={{ position: 'relative' }} className="d-flex align-items-center gap-2">
-              <div className="topbar-avatar">{initials}</div>
+              <button type="button" className="topbar-avatar user-avatar-toggle" aria-label="Account menu" aria-expanded={ddOpen} aria-controls="user-account-dropdown" onClick={() => setDdOpen(o => !o)}>{initials}</button>
               <div>
                 <div className="user-name-text">{user?.name || 'Student'}</div>
                 <div className="user-role-text">{roleLabel}</div>
               </div>
-              <button type="button" className="user-menu-toggle" aria-label="Account menu" aria-expanded={ddOpen} onClick={() => setDdOpen(o => !o)}><i className={`ti ti-chevron-down user-chevron${ddOpen ? ' open' : ''}`}></i></button>
+              <button type="button" className="user-menu-toggle" aria-label="Account options" aria-expanded={ddOpen} onClick={() => setDdOpen(o => !o)}><i aria-hidden="true" className={`ti ti-chevron-down user-chevron${ddOpen ? ' open' : ''}`}></i></button>
 
               {ddOpen && (
-                <div className="user-dd">
+                <div className="user-dd" id="user-account-dropdown">
                   <div className="user-dd-header">
                     <div className="user-dd-avatar">{initials}</div>
                     <div>
@@ -153,12 +155,12 @@ export default function Layout({ children, hideSidebar = false }: { children: Re
                     </div>
                   </div>
                   <div className="user-dd-divider"></div>
-                  <NavLink className="user-dd-item" to="/profile" onClick={() => setDdOpen(false)}><i className="ti ti-user"></i> My Profile</NavLink>
-                  {['student', 'adviser'].includes(effectiveRole || '') && <NavLink className="user-dd-item" to="/settings" onClick={() => setDdOpen(false)}><i className="ti ti-settings"></i> Settings</NavLink>}
+                  <NavLink className="user-dd-item" to="/profile" onClick={() => setDdOpen(false)}><i aria-hidden="true" className="ti ti-user"></i> My Profile</NavLink>
+                  {['student', 'adviser', 'library'].includes(effectiveRole || '') && <NavLink className="user-dd-item" to="/settings" onClick={() => setDdOpen(false)}><i aria-hidden="true" className="ti ti-settings"></i> Settings</NavLink>}
                   <div className="user-dd-divider"></div>
-                  <div className="user-dd-item logout" onClick={signOut}>
-                    <i className="ti ti-logout"></i> Log Out
-                  </div>
+                  <button type="button" className="user-dd-item logout" onClick={signOut}>
+                    <i aria-hidden="true" className="ti ti-logout"></i> Log Out
+                  </button>
                 </div>
               )}
             </div>

@@ -18,6 +18,7 @@ export default function AdviserDashboard() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [kind, setKind] = useState<ReportKind>('groups');
+  const [display, setDisplay] = useState<ReportKind>('groups');
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [revision, setRevision] = useState(0);
@@ -41,6 +42,8 @@ export default function AdviserDashboard() {
   const busy = loading || query !== loadedQuery;
   const groups = report?.Groups || [];
   const pages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  const visibleGroups = groups.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const matchingStudents = groups.reduce((count, group) => count + group.Members.filter(student => matchesStudent(student, query)).length, 0);
   const exportReport = async (format: 'pdf' | 'xlsx') => {
     setExporting(true); setFeedback(''); setError('');
     try {
@@ -55,26 +58,32 @@ export default function AdviserDashboard() {
     finally { setExporting(false); }
   };
   return <Layout><main className="admin-body adviser-workspace">
-    <header className="admin-heading"><div><div className="admin-eyebrow">ADVISER WORKSPACE</div><h1>Dashboard</h1><p>Your assigned groups and student members.</p></div><button className="admin-refresh" aria-label="Refresh dashboard" disabled={exporting} onClick={() => { setLoading(true); setRevision(n => n + 1); }}><span aria-hidden="true">&#8635;</span></button></header>
+    <header className="admin-heading"><div><h1>Dashboard</h1><p>Your assigned groups and student members.</p></div><button className="admin-refresh" aria-label="Refresh dashboard" disabled={exporting} onClick={() => { setLoading(true); setRevision(n => n + 1); }}><span aria-hidden="true">&#8635;</span></button></header>
     {error && <div className="alert alert-danger" role="alert">{error}</div>}
     {feedback && <div className="alert alert-success" role="status">{feedback}</div>}
     <div className="admin-stats">{[
       ['Groups', report?.Summary.Groups, 'ti-users-group'], ['Student Members', report?.Summary.StudentMembers, 'ti-users'], ['Available Slots', report?.Summary.AvailableSlots, 'ti-layout-grid'],
     ].map(([label, value, icon]) => <div className="admin-stat" key={label}><i className={`ti ${icon}`} /><span>{value ?? '—'}</span><small>{label}</small></div>)}</div>
     <section className="admin-panel" aria-labelledby="student-groups-title">
-      <div className="admin-panel-head"><h2 id="student-groups-title">Student Groups</h2><div className="admin-panel-actions">
+      <div className="admin-panel-head"><h2 id="student-groups-title" className="visually-hidden">{display === 'groups' ? 'Groups' : 'Students by group'}</h2><select className="workspace-view-select" aria-label="Display records" value={display} onChange={event => { const next = event.target.value as ReportKind; setDisplay(next); setKind(next); setPage(1); setExpanded([]); setFeedback(''); }}><option value="groups">Groups</option><option value="students">Students</option></select><div className="admin-panel-actions">
         <label className="workspace-search">Search Student<input aria-label="Search Student" placeholder="Name or student ID" maxLength={200} value={query} onChange={e => { setQuery(e.target.value); setLoading(true); setFeedback(''); }} /></label>
         <label className="workspace-export-kind">Export contents<select aria-label="Export contents" value={kind} onChange={e => setKind(e.target.value as ReportKind)}><option value="groups">Group summary</option><option value="students">Student member list</option></select></label>
         <button className="admin-add" disabled={busy || exporting || !groups.length} onClick={() => void exportReport('pdf')}>Export PDF</button><button className="admin-add" disabled={busy || exporting || !groups.length} onClick={() => void exportReport('xlsx')}>Export Excel</button>
       </div></div>
       <p className="workspace-hint">{exporting ? 'Preparing report…' : 'Exports include all matching pages. Student lists include only students matching your search.'}</p>
-      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Group Name</th><th>Course</th><th>Member Count</th><th>View</th></tr></thead><tbody>
-        {busy ? <tr><td colSpan={4} role="status">Loading groups…</td></tr> : !groups.length ? <tr><td colSpan={4}>No matching student groups.</td></tr> : groups.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(group => <Fragment key={group.GroupID}>
+      <div className="admin-table-wrap"><table className={`admin-table${display === 'students' ? ' workspace-student-table' : ''}`}><thead><tr>{(display === 'groups' ? ['Group Name', 'Course', 'Member Count', 'View'] : ['Student ID', 'Name', 'Course']).map(column => <th scope="col" key={column}>{column}</th>)}</tr></thead>
+        {busy ? <tbody><tr><td colSpan={display === 'groups' ? 4 : 3} role="status">Loading {display}…</td></tr></tbody> : !groups.length ? <tbody><tr><td colSpan={display === 'groups' ? 4 : 3}>No matching student groups.</td></tr></tbody> : display === 'students' ? visibleGroups.map(group => {
+          const members = group.Members.filter(student => matchesStudent(student, query));
+          return <tbody className="workspace-student-group" aria-label={`${group.GroupName} students`} key={group.GroupID}>
+            <tr className="workspace-group-heading"><th colSpan={3} scope="rowgroup"><strong>{group.GroupName}</strong><span>{members.length} {members.length === 1 ? 'student' : 'students'}</span></th></tr>
+            {members.length ? members.map(student => <tr className="workspace-student-row" key={student.UserID}><td>{student.UserCode}</td><td><strong>{student.Name}</strong>{student.IsLeader && <small>Group leader</small>}</td><td>{student.Course}</td></tr>) : <tr><td colSpan={3}>No students in this group.</td></tr>}
+          </tbody>;
+        }) : <tbody>{visibleGroups.map(group => <Fragment key={group.GroupID}>
           <tr><td><strong>{group.GroupName}</strong></td><td>{group.Course}</td><td>{group.MemberCount}</td><td><button className="admin-action" aria-label={`View ${group.GroupName} members`} aria-expanded={expanded.includes(group.GroupID)} aria-controls={`members-${group.GroupID}`} onClick={() => setExpanded(current => current.includes(group.GroupID) ? current.filter(id => id !== group.GroupID) : [...current, group.GroupID])}>{expanded.includes(group.GroupID) ? 'Hide' : 'View'}</button></td></tr>
           {expanded.includes(group.GroupID) && <tr id={`members-${group.GroupID}`}><td colSpan={4}><table className="workspace-members" aria-label={`${group.GroupName} members`}><thead><tr><th>Student ID</th><th>Name</th><th>Course</th></tr></thead><tbody>{group.Members.map(student => <tr key={student.UserID} className={query.trim() && matchesStudent(student, query) ? 'search-match' : ''}><td>{student.UserCode}</td><td>{student.Name}{student.IsLeader && <small>Group leader</small>}</td><td>{student.Course}</td></tr>)}{!group.Members.length && <tr><td colSpan={3}>No student members.</td></tr>}</tbody></table></td></tr>}
-        </Fragment>)}
-      </tbody></table></div>
-      <div className="admin-pagination"><span>{groups.length} groups · Page {page} of {pages}</span><button disabled={busy || page <= 1} onClick={() => setPage(n => n - 1)}>Previous</button><button disabled={busy || page >= pages} onClick={() => setPage(n => n + 1)}>Next</button></div>
+        </Fragment>)}</tbody>}
+      </table></div>
+      <div className="admin-pagination"><span>{display === 'students' ? `${matchingStudents} students in ` : ''}{groups.length} groups · Page {page} of {pages}</span><button disabled={busy || page <= 1} onClick={() => setPage(n => n - 1)}>Previous</button><button disabled={busy || page >= pages} onClick={() => setPage(n => n + 1)}>Next</button></div>
     </section>
   </main></Layout>;
 }
